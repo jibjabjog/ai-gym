@@ -17,26 +17,35 @@ estimate — see `CLAUDE.md` for the full write-up, transcripts, and how each
 number was produced. Blank cells are tests that candidate hasn't been run
 through yet, not a bad score.
 
-| | **Inky** (Qwen3.5, 0.8B) | **spark-x2.5** (1.7B) | **gemma-4-E2B** |
-|---|---|---|---|
-| Context (as configured) | 10,240 | 8,192 (native 1,048,576) | 65,536 |
-| RAM loaded | ~2.9 GB | ~1.5 GB | ~5.8 GB |
-| Throughput | ~5 tok/s | ~18 tok/s | ~12.6 tok/s |
-| Tool-calling / system role support | ✅ | ✅ | ✅ |
-| Coherent under the character harness | ❌ hallucinated non-sequiturs, emoji glitches | ✅ coherent, but anchors hard and loops | ✅ coherent and varied |
-| Holds up under guardrail stress-test | — not tested | ❌ heavy collapse (4/6 turns → fallback in the adversarial test) | ✅ mostly holds (7/17 turns needed any intervention, only 1 outright fallback) |
-| Tonal shift across mood bands | — not tested | ❌ muted — same voice `surly`→`fond of you` | ❌ muted — same finding, better model didn't fix it |
-| Interview: technical accuracy | — not tested | ❌ invented fake `systemd-analyze` commands | ✅ correct, real command |
-| Interview: language consistency | — not tested | ❌ 6/6 reproducible switches to Chinese in idle mode | ✅ 6/6 stayed in English, in character |
+| | **Inky** (Qwen3.5, 0.8B) | **spark-x2.5** (1.7B) | **spark-x2.5** (4B) | **gemma-4-E2B** |
+|---|---|---|---|---|
+| Context (as configured) | 10,240 | 8,192 (native 1,048,576) | 4,096 (native 1,048,576) | 65,536 |
+| RAM loaded | ~2.9 GB | ~1.5 GB | ~8.4 GB | ~5.8 GB |
+| Throughput | ~25 tok/s (corrected 2026-09-17 — an earlier ~5 tok/s figure was a bad single measurement) | ~18 tok/s | ~1.8 tok/s (~88s cold load) | ~12.6 tok/s |
+| Tool-calling / system role support | ✅ | ✅ | ✅ | ✅ |
+| Coherent under the character harness | ❌ hallucinated non-sequiturs, emoji glitches | ✅ coherent, but anchors hard and loops | — not tested | ✅ coherent and varied |
+| Holds up under guardrail stress-test | — not tested | ❌ heavy collapse (4/6 turns → fallback in the adversarial test) | — not tested | ✅ mostly holds (7/17 turns needed any intervention, only 1 outright fallback) |
+| Tonal shift across mood bands | — not tested | ❌ muted — same voice `surly`→`fond of you` | — not tested | ❌ muted — same finding, better model didn't fix it |
+| Interview: technical accuracy | — not tested | ❌ invented fake `systemd-analyze` commands | ⚠️ no fabrication, but vague/occasionally confused | ✅ correct, real command |
+| Interview: language consistency | — not tested | ❌ 6/6 reproducible switches to Chinese in idle mode | ✅ 6/6 stayed in English (fixed at this size) | ✅ 6/6 stayed in English, in character |
 
 **Bottom line:** `Inky` (0.8B, the actual live fallback model) is below the
-coherence floor for wearing a character at all. `spark-x2.5` is the better
-*resource* fit for this box (a third the RAM, fastest of the three) but
-failed the two tests that actually matter for a trusted fallback assistant —
-correctness and language reliability. `gemma-4-E2B` is the strongest overall
-candidate for the Inky *role*, at the cost of RAM and speed. None of this
-changes Hermes' actual `fallback_model` config — that's a separate decision,
-not made by any test here.
+coherence floor for wearing a character at all — and notably, that's not a
+speed problem: a controlled re-benchmark showed Inky is actually the
+*fastest* of the four candidates (~25 tok/s), not the slowest as an earlier
+single bad measurement in this file claimed. Being fast doesn't help when
+the output itself is incoherent. `spark-x2.5` (1.7B) is otherwise the best
+*resource* fit for this box but failed the two tests that matter most
+for a trusted fallback — correctness and language reliability. Scaling to
+`spark-x2.5` (4B) fixes the language-switching (a real capacity effect, not
+baked into the model family regardless of size) and stops the outright
+command fabrication, but its answers are still vaguer than `gemma-4-E2B`'s,
+and its resource cost is now the *worst* of the four — ~88s to cold-load and
+under 2 tok/s on this CPU-only box, a serious liability for something meant
+to respond promptly when the primary model is down. `gemma-4-E2B` remains
+the strongest all-around candidate for the Inky role. None of this changes
+Hermes' actual `fallback_model` config — that's a separate decision, not
+made by any test here.
 
 ## The equipment
 
@@ -111,7 +120,9 @@ INKY_BACKEND=ollama INKY_PORT=11434 INKY_MODEL_NAME=spark-x2.5 exercise/characte
 
 `spark-x2.5` (1.7B, [SparkLLM/Spark-X2.5](https://ollama.com/SparkLLM/Spark-X2.5-4B))
 was evaluated as a possible Inky upgrade — noticeably more coherent than the
-0.8B and faster, but it anchors hard on the character sheet's voice examples
+0.8B (though not faster — a later corrected benchmark found the 0.8B is
+actually the quickest of everything tested; see the scorecard above), but it
+anchors hard on the character sheet's voice examples
 and loops near-verbatim across turns. `character.sh` now catches this: a
 guardrail (ported from `the-orb`'s `guardrail.py`/`loop.py`) detects a
 near-verbatim echo of the character's own past line or a voice example,
@@ -159,13 +170,24 @@ questions and idle small talk, single-shot, no shared memory:
 exercise/interview.sh
 ```
 
-Result: `spark-x2.5` is the better resource fit (a third the RAM, faster) but
-lost the interview on substance — it invented fake `systemd-analyze` subcommands
-answering a real troubleshooting question, and reproducibly (6/6 across two
-runs) switched to Chinese mid-conversation in idle mode. `gemma-4-E2B` gave
-correct, concise technical answers and stayed in English and in character
-throughout, with no example scaffolding to lean on. Full transcripts and
-verdict in `CLAUDE.md`.
+Result: `spark-x2.5` (1.7B) is the better resource fit (a third the RAM, faster)
+but lost the interview on substance — it invented fake `systemd-analyze`
+subcommands answering a real troubleshooting question, and reproducibly
+(6/6 across two runs) switched to Chinese mid-conversation in idle mode
+(it's a Chinese-origin model family — the Gaokao benchmark on its own model
+card is the tell — and that bias leaks through hardest on short, low-signal
+prompts). `gemma-4-E2B` gave correct, concise technical answers and stayed
+in English and in character throughout, with no example scaffolding to lean
+on. Pulling the bigger `spark-x2.5-4B` and re-running the same interview
+fixed the language-switching entirely (6/6 English) and stopped the
+outright command fabrication — but at ~88s to cold-load and under 2 tok/s
+on this box, plus still-vaguer technical answers than `gemma-4-E2B`'s, it's
+not a clear win either. Full transcripts and verdict in `CLAUDE.md`.
+
+```bash
+# test a different candidate the same way:
+CANDIDATES="Spark-X2.5-4B|ollama|127.0.0.1|11434|SparkLLM/Spark-X2.5-4B" exercise/interview.sh
+```
 
 ## Config
 
