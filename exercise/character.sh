@@ -54,6 +54,43 @@ mood_value="$(echo "${sheet}" | jq -r '.mood.start')"
 mood_floor="$(echo "${sheet}" | jq -r '.mood.floor')"
 mood_ceiling="$(echo "${sheet}" | jq -r '.mood.ceiling')"
 
+# Reins for experimenting with a specific mood directly, instead of
+# scripting a whole conversation to drift there (see CLAUDE.md's
+# surly/fond-of-you crossing test — that took a precomputed 17-turn
+# marathon just to reach one band). Env vars, not --flags, to match every
+# other knob this script has (INKY_CHARACTER, INKY_MODEL_NAME, etc.) and
+# to not collide with how the single-shot prompt argument ($*) is parsed.
+#
+# INKY_MOOD_TYPE=<band label>  — starts at that band's own threshold value
+#   (its upper edge — current_band's "<=" comparison guarantees landing in
+#   that band). Must match one of this sheet's own band labels exactly
+#   (sheet-specific vocabulary, e.g. "surly"/"guarded"/... for the janitor
+#   — there's no universal "happy").
+# INKY_MOOD_SETTING=<number>   — starts at that exact value instead
+#   (wins over INKY_MOOD_TYPE if both are set — more precise).
+# INKY_MOOD_LOCK=1             — freezes mood at its starting value for
+#   the whole session; adjust_mood_from_text becomes a no-op. Use this to
+#   isolate one band's tone cleanly, with zero drift confound.
+if [[ -n "${INKY_MOOD_TYPE:-}" ]]; then
+    band_value="$(echo "${sheet}" | jq -r --arg band "${INKY_MOOD_TYPE}" \
+        '(.mood.bands[] | select(.[1] == $band) | .[0]) // empty')"
+    if [[ -z "${band_value}" ]]; then
+        valid="$(echo "${sheet}" | jq -r '[.mood.bands[][1]] | join(", ")')"
+        echo "FAIL: unknown INKY_MOOD_TYPE '${INKY_MOOD_TYPE}'. Valid for this sheet: ${valid}" >&2
+        exit 1
+    fi
+    mood_value="${band_value}"
+fi
+if [[ -n "${INKY_MOOD_SETTING:-}" ]]; then
+    mood_value="${INKY_MOOD_SETTING}"
+fi
+(( mood_value < mood_floor )) && mood_value=${mood_floor}
+(( mood_value > mood_ceiling )) && mood_value=${mood_ceiling}
+MOOD_LOCK="${INKY_MOOD_LOCK:-0}"
+# Prints the live mood value + band after each reply — no more hand-running
+# a separate jq script alongside the real one just to see where mood is at.
+MOOD_DEBUG="${INKY_MOOD_DEBUG:-0}"
+
 # Ascending (threshold, label) bands — mirrors Stat.band: first band whose
 # threshold the value is at or under, else the last band.
 current_band() {
@@ -123,6 +160,7 @@ mood_delta_for_text() {
 }
 
 adjust_mood_from_text() {
+    [[ "${MOOD_LOCK}" == "1" ]] && return
     local delta
     delta="$(mood_delta_for_text "$1")"
     mood_value=$(( mood_value + delta ))
@@ -381,6 +419,7 @@ ask_and_record() {
     else
         print_reply "${response}"
     fi
+    [[ "${MOOD_DEBUG}" == "1" ]] && echo "  [mood: ${mood_value} ($(current_band))]"
 
     [[ -n "${content}" ]] && remember "${char_name,,}" "${content}"
 }

@@ -101,12 +101,23 @@ directive; kind/rude/threatening words in what you say (negation-aware —
 "I'm not a threat" won't dock it) nudge a bounded mood value up or down,
 which picks which band's examples actually get shown each turn. See
 `characters/inky-janitor.json` for the schema and `CLAUDE.md` for the full
-writeup, including a bug this caught (a fallback line that broke character
-by narrating in third person — the exact bug `the-orb` fixed in its own
-guardrail the same day) and an honest finding: a bigger brief (mood section
-+ more examples) measurably strained `spark-x2.5` harder under an
-adversarial insults-then-praise test, triggering more fallbacks — bigger
-brief isn't free on a model this small.
+writeup — including a bug this caught (a fallback line that broke character
+by narrating in third person, the exact bug `the-orb` fixed in its own
+guardrail the same day) and an honest negative result: two conversations
+built to deliberately cross into `surly` and `fond of you` (band crossings
+confirmed by precomputing the mood math before running) showed the
+mechanism itself works correctly, but `spark-x2.5` barely changes its
+observable tone across a full three-band swing — it has a dominant
+"I mop, that's all there is to it" attractor strong enough to swamp
+whichever voice examples are actually shown.
+
+Experimenting with a specific mood is now instant instead of needing a
+scripted multi-turn conversation to drift there:
+
+```bash
+INKY_MOOD_TYPE="fond of you" INKY_MOOD_DEBUG=1 exercise/character.sh "Who are you?"
+INKY_MOOD_SETTING=10 INKY_MOOD_LOCK=1 exercise/character.sh   # pin mood, no drift, clean A/B testing
+```
 
 ## Config
 
@@ -120,6 +131,10 @@ All scripts talk to `127.0.0.1:45072` (Inky) by default. Override with:
 - `INKY_MODEL_NAME` — the `model` field sent in the request (`chat.sh`/`character.sh`, default `Inky`) — set this to test against a different model on `INKY_PORT`
 - `INKY_TEMPERATURE` / `INKY_REPEAT_PENALTY` — sampling for `character.sh` (default `0.4` / `1.3`, tightened from the server's defaults to keep small-model replies grounded rather than rambling)
 - `INKY_BACKEND` — `openai` (default, llama.cpp-style `/v1/chat/completions`) or `ollama` (`/api/chat`, needed for ollama's `think` toggle to actually work)
+- `INKY_MOOD_TYPE` — start at a named band's threshold value instead of the sheet's default (`character.sh` only; must match one of the sheet's own band labels, e.g. `surly`/`guarded`/`warming up`/`friendly`/`fond of you` for the janitor sheet — errors out and lists valid options otherwise)
+- `INKY_MOOD_SETTING` — start at this exact numeric mood value instead (wins over `INKY_MOOD_TYPE` if both are set)
+- `INKY_MOOD_LOCK` — set to `1` to freeze mood at its starting value for the whole session (no drift from what's said — useful for isolating one band's tone cleanly)
+- `INKY_MOOD_DEBUG` — set to `1` to print the live mood value + band after every reply
 
 Requires `curl` and `jq`. No Python, no Hermes venv — just plain bash
 talking straight to the llama.cpp HTTP API.
