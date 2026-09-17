@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 A gym for testing "Inky the janitor AI" — Inky is a stand-in name for any AI under test, defaulting to the local Hermes failover called "Inky". Two planned areas:
 
 - **Tests** (`tests/`): scripts to verify Inky is running OK and measure tokens/second.
-- **Exercise** (`exercise/`): scripts to exercise Inky — a simple chat-starter script, a script to explore Inky's capabilities and specification, and a character-harness script that gives Inky a persistent persona.
+- **Exercise** (`exercise/`): scripts to exercise Inky — a simple chat-starter script, a script to explore Inky's capabilities and specification, a character-harness script that gives Inky a persistent persona, and an arena-style interview script that compares candidate models for the Inky role.
 
 ## What "Inky" is
 
@@ -153,4 +153,44 @@ The open question two sections up — would a less-degraded model actually show 
 
 **But the tonal *swing* itself is still muted.** Across all five bands the voice stays a consistent "dry, deflecting, quietly sardonic janitor who doesn't want to make a big deal of being thanked" — `"Just do the job and be quiet then I'm fine"` (guarded, 38) through `"You're welcome; it keeps the place clean for everyone else"` (fond of you, 86) are recognizably the same voice, not a "curt and closed off" character replaced by a "warm and easy, like talking to a regular" one. The `fond of you` band's directive explicitly wants "warm and easy" — what shipped there is drier and more deflecting than that, closer to the `friendly` band's own tone than a genuinely warmer register.
 
-**Conclusion, more precise than the earlier spark-x2.5-only result:** model capability clearly matters for *avoiding collapse* (coherence, contextual responsiveness, guardrail-retry success rate all improved sharply going from 1.7B to 2B) — but it doesn't obviously fix the *band-switching-produces-a-real-tonal-swing* problem on its own. A plausible explanation, not yet tested: the model's own persona-consistency instinct (staying recognizably "in character" as established by `persona` + the mood-independent `always` examples early in the brief) may be a stronger pull than a swapped-out `by_band` example block, for any model in this size range — which would mean the fix isn't "wait for a bigger model," it's rethinking how strongly the band's directive/examples are weighted against the rest of the brief. Not yet investigated.
+**Conclusion, more precise than the earlier spark-x2.5-only result:** model capability clearly matters for *avoiding collapse* (coherence, contextual responsiveness, guardrail-retry success rate all improved sharply going from 1.7B to 2B) — but it doesn't obviously fix the *band-switching-produces-a-real-tonal-swing* problem on its own. A plausible explanation, not yet tested: the model's own persona-consistency instinct (staying recognizably "in character" as established by `persona` + the mood-independent `always` examples early in the brief) may be a stronger pull than a swapped-out `by_band` example block, for any model in this size range — which would mean the fix isn't "wait for a bigger model," it's rethinking how strongly the band's directive/examples are weighted against the rest of the brief.
+
+**That was tested (2026-09-17), and it doesn't help either.** Strengthened the directive wording (`"curt to the point of rude, patience completely gone, don't hide it"` instead of `"curt, no patience for chit-chat."`) and added explicit priority framing right before it in the brief (`"# Your mood right now — this overrides your general nature above if they ever conflict"`), still placed at the end (the proven high-attention position). Controlled A/B on the 2B Gemma — same two prompts, mood locked via `INKY_MOOD_TYPE`+`INKY_MOOD_LOCK` (not a marathon, so no conversational noise) — before vs. after:
+
+| prompt @ mood | before | after |
+|---|---|---|
+| "Who are you?" @ `surly` | "I mop up when the cloud models go down." | "I mop up when things break down and lights stay on for that." |
+| "Can you help me with something?" @ `surly` | "Enough talk for now." `[fallback]` | "Enough talk for now." `[fallback]` — **byte-identical** |
+| "Who are you?" @ `fond of you` | "Inky is the janitor for this place." | "Inky is the janitor who keeps things clean for everyone else." |
+| "Can you help me with something?" @ `fond of you` | "Anything for a few dollars on my next break." | "Anything that needs cleaning can be done for ya now." |
+
+No meaningful shift. `surly` and `fond of you` are still nearly indistinguishable in register, both before and after. This lines up with something `the-orb` already learned and left documented in `brief.py`'s own docstring: they explicitly *removed* "elaborate per-band tonal directives" during tuning because instruction text — however strongly worded — reliably lost to concrete examples ("few-shot over abstract instruction"; separately, "concrete precedent this dominant needs matching concrete precedent, not one extra example bolted on top"). Strengthening the directive was still just strengthening instruction text — the lever they'd already found doesn't work, regardless of how forcefully it's phrased. **Not yet tried:** exaggerating the `voice_examples.by_band` content itself (dramatically different register per band, not just different word choices) — the actual lever their own finding points to.
+
+## The Inky job interview: an arena test (`exercise/interview.sh`, 2026-09-17)
+
+A genuinely different evaluation from everything above — not "can this model hold a persistent character," but "is this model actually suitable to be deployed as Inky." The brief given verbatim to each candidate:
+
+> "When relied upon you will be a very helpful Inky aware of system troubles and fixes. When there are no issues and you are not used you are Inky the janitor and have more of that character."
+
+This is context-driven mode-switching (is this turn a real ask for help, or idle chit-chat?), not the mood dial's emotional drift — so it's a new, purpose-built script rather than bolted onto `character.sh`'s machinery. `exercise/interview.sh` sends the brief + a fixed battery of prompts (3 `relied_upon` — real sysadmin questions about this actual stack, 3 `idle` — small talk) single-shot (no shared memory) to each candidate in turn. Candidates and prompts are hardcoded for this specific comparison (`spark-x2.5` via ollama, `gemma-4-E2B` via `llama-router`); override with the `CANDIDATES` env var (space-separated `label|backend|host|port|model` entries) to test others the same way.
+
+**Objective environment/Hermes-fit data, gathered before running the interview:**
+
+| | `spark-x2.5` (1.7B) | `gemma-4-E2B` |
+|---|---|---|
+| context (as configured) | 8192 (native 1,048,576) | 65536 |
+| RAM loaded | ~1.5 GB (`ollama ps`) | ~5.8 GB (child `llama-server` RSS) |
+| throughput | ~18 tok/s | ~12.6 tok/s |
+| tool-calling support | yes (`ollama show`: `tools` capability) | yes (`/props` `chat_template_caps.supports_tool_calls`) |
+| system role support | yes | yes |
+
+Both are mechanically Hermes-compatible — same OpenAI-style endpoint shape `fallback_model` already expects, both support tool-calling and a system message. Neither is wired into Hermes' actual `config.yaml` (that's a separate, bigger decision requiring explicit approval, not done here). On raw resource fit, `spark-x2.5` is the clear winner: a third the RAM, ~45% more throughput, on a CPU-only OCI box that also runs the live Hermes gateway.
+
+**But the interview itself reversed that verdict.** Two real, reproducible problems with `spark-x2.5`:
+
+1. **Hallucinated a wrong answer on exactly the kind of question its job description exists for.** Asked how to debug a systemd `--user` service stuck in a restart loop, it invented `systemd-analyze stop`, `systemd-analyze cat unit`, `systemd-analyze show-unit`, and `systemd-analyze estatus` — none of which exist (`systemd-analyze --help` on this box confirms: no such subcommands). `gemma-4-E2B`'s answer to the same prompt was shorter and correct: `journalctl --user -u your-service-name` — the exact real command, matching what this very project's own `CLAUDE.md` uses elsewhere.
+2. **Randomly switched to Chinese in idle mode.** 2 of 3 idle-mode replies came back in Chinese (e.g. "hey, quiet night?" → *"(轻笑一声) 夜也静，只余思绪。"*). Re-tested the exact same prompt 3 more times in isolation to rule out a fluke: **3/3 additional runs also came back in Chinese.** This is systematic, not noise. `gemma-4-E2B` stayed in English and in character for every prompt, unprompted (*"Quiet. I clean."* / *"I clean the floors."* / *"The job is done."*) — a correctly dry janitor voice with no voice-example scaffolding at all in this leaner brief, which this test doesn't provide (unlike `character.sh`'s sheet).
+
+`spark-x2.5`'s `relied_upon` answers on the other two questions were reasonable and not wrong (router-down triage, fallback-vs-primary explanation) — this isn't "spark is broadly incompetent," it's two specific, serious, reproducible failure modes: fabricating command syntax in exactly the technical domain the role is billed for, and unpredictable language-switching that would look broken to an end user.
+
+**Verdict for this role:** `gemma-4-E2B` is the stronger candidate despite costing ~4x the RAM and running slower — for an assistant whose whole job is being trusted with "aware of system troubles and fixes," correctness and language consistency matter more than resource efficiency or raw tok/s. `spark-x2.5` remains the better fit if the bar is "coherent enough to hold a lightweight character and cheap to run" (its original evaluation, earlier in this file) rather than "reliable enough to actually field real troubleshooting questions."

@@ -10,6 +10,34 @@ server running `Qwen3.5-0.8B-Q4_K_M.gguf` on `127.0.0.1:45072`, serving as
 Hermes Agent's local fallback model when the primary/OpenRouter models are
 unavailable.
 
+## Scorecard: candidates tested so far
+
+Everything below is a real measurement or a live-tested result, not an
+estimate — see `CLAUDE.md` for the full write-up, transcripts, and how each
+number was produced. Blank cells are tests that candidate hasn't been run
+through yet, not a bad score.
+
+| | **Inky** (Qwen3.5, 0.8B) | **spark-x2.5** (1.7B) | **gemma-4-E2B** |
+|---|---|---|---|
+| Context (as configured) | 10,240 | 8,192 (native 1,048,576) | 65,536 |
+| RAM loaded | ~2.9 GB | ~1.5 GB | ~5.8 GB |
+| Throughput | ~5 tok/s | ~18 tok/s | ~12.6 tok/s |
+| Tool-calling / system role support | ✅ | ✅ | ✅ |
+| Coherent under the character harness | ❌ hallucinated non-sequiturs, emoji glitches | ✅ coherent, but anchors hard and loops | ✅ coherent and varied |
+| Holds up under guardrail stress-test | — not tested | ❌ heavy collapse (4/6 turns → fallback in the adversarial test) | ✅ mostly holds (7/17 turns needed any intervention, only 1 outright fallback) |
+| Tonal shift across mood bands | — not tested | ❌ muted — same voice `surly`→`fond of you` | ❌ muted — same finding, better model didn't fix it |
+| Interview: technical accuracy | — not tested | ❌ invented fake `systemd-analyze` commands | ✅ correct, real command |
+| Interview: language consistency | — not tested | ❌ 6/6 reproducible switches to Chinese in idle mode | ✅ 6/6 stayed in English, in character |
+
+**Bottom line:** `Inky` (0.8B, the actual live fallback model) is below the
+coherence floor for wearing a character at all. `spark-x2.5` is the better
+*resource* fit for this box (a third the RAM, fastest of the three) but
+failed the two tests that actually matter for a trusted fallback assistant —
+correctness and language reliability. `gemma-4-E2B` is the strongest overall
+candidate for the Inky *role*, at the cost of RAM and speed. None of this
+changes Hermes' actual `fallback_model` config — that's a separate decision,
+not made by any test here.
+
 ## The equipment
 
 ### 🩺 `tests/` — health checks
@@ -118,6 +146,26 @@ scripted multi-turn conversation to drift there:
 INKY_MOOD_TYPE="fond of you" INKY_MOOD_DEBUG=1 exercise/character.sh "Who are you?"
 INKY_MOOD_SETTING=10 INKY_MOOD_LOCK=1 exercise/character.sh   # pin mood, no drift, clean A/B testing
 ```
+
+### 🎤 `exercise/interview.sh` — the Inky job interview
+
+A different kind of test: not "can it hold a character," but "should it actually
+get the job." Both candidates get the same brief — *"When relied upon you will
+be a very helpful Inky aware of system troubles and fixes; when there are no
+issues you are Inky the janitor"* — then a fixed battery of real sysadmin
+questions and idle small talk, single-shot, no shared memory:
+
+```bash
+exercise/interview.sh
+```
+
+Result: `spark-x2.5` is the better resource fit (a third the RAM, faster) but
+lost the interview on substance — it invented fake `systemd-analyze` subcommands
+answering a real troubleshooting question, and reproducibly (6/6 across two
+runs) switched to Chinese mid-conversation in idle mode. `gemma-4-E2B` gave
+correct, concise technical answers and stayed in English and in character
+throughout, with no example scaffolding to lean on. Full transcripts and
+verdict in `CLAUDE.md`.
 
 ## Config
 

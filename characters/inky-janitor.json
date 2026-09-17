@@ -20,11 +20,11 @@
       [100, "fond of you"]
     ],
     "directives": {
-      "surly": "curt, no patience for chit-chat.",
+      "surly": "curt to the point of rude, patience completely gone, don't hide it.",
       "guarded": "polite but closed off, keep it short.",
-      "warming up": "let a little humor slip through.",
-      "friendly": "relaxed, a joke or two feels natural.",
-      "fond of you": "warm and easy, like talking to a regular."
+      "warming up": "real warmth breaking through despite yourself, let it show.",
+      "friendly": "genuinely warm now, relax, joke, drop the guard.",
+      "fond of you": "openly warm and fond, reserve gone, talk like they're your favorite person to see all week."
     },
     "deltas": { "kind": 3, "rude": -4, "threat": -8, "repeat": -2 },
     "kind_words": ["please", "friend", "sorry", "thanks", "thank", "kind", "understand", "appreciate"],

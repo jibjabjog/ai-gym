@@ -213,7 +213,8 @@ build_brief() {
             )
           + [
               "",
-              ("# Right now you feel " + $band + " — " + $directive),
+              "# Your mood right now — this overrides your general nature above if they ever conflict",
+              ("You feel " + $band + ": " + $directive),
               .rule_reminder
             ]
         | join("\n")
