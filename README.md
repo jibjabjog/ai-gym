@@ -6,9 +6,9 @@ personality workouts, a job interview, and simulated incident drills.
 
 > **Verdict so far:** hire **gemma-4-E2B** — the only candidate that answers
 > correctly, stays in character, and actually fixed the simulated incident
-> (3/3). Two conditions: pin its temperature low (at its default 1.0 the fix
-> rate drops to 1/3, and Hermes sends no temperature by default), and confirm
-> fixes independently — it sometimes misreports what it did. Inky (0.8B) is the
+> (3/3). Two conditions: keep its temperature low (at 1.0 the fix rate drops
+> to 1/3, and Hermes sends none — now pinned to 0.3 in the router preset), and
+> confirm fixes independently — it sometimes misreports what it did. Inky (0.8B) is the
 > fastest but fails every capability test.
 
 Details and evidence: [`FINDINGS.md`](FINDINGS.md) · raw transcripts:

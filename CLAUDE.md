@@ -11,7 +11,7 @@ Results live in `FINDINGS.md`; the front door is `README.md`.
 | Service | Port | Model | Notes |
 |---|---|---|---|
 | `llama-qwen35-tiny.service` (user) | 45072 | Qwen3.5-0.8B, alias `Inky` | the live Hermes `fallback_model`; always on |
-| `llama-router.service` (user) | 8080 | gemma-4-E2B (+ presets) | **off by default** — start for a test, stop after |
+| `llama-router.service` (user) | 8080 | gemma-4-E2B (+ presets) | **off by default** — start for a test, stop after. gemma's default temp is pinned to 0.3 in `~/llama-presets.ini` |
 | `ollama.service` (system, v0.34.1) | 11434 | `spark-x2.5`, `SparkLLM/Spark-X2.5-4B` | loads on demand, unloads when idle |
 | `hermes-gateway.service` (user) | — | — | the live agent — never restart or reconfigure it |
 

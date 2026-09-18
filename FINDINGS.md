@@ -36,7 +36,8 @@ human (or a health check) confirming any fix.** As of the v2 re-run (§10):
   default, and what Hermes would use, since Hermes sends no temperature) that
   drops to **1/3**, with one run declaring the job done while the service was
   still down. It also misdescribed its own successful fix in 1/3 runs. So:
-  set `temp` server-side, and verify "fixed" independently of the model's report.
+  temperature is now pinned server-side (below), and "fixed" should be
+  verified independently of the model's report.
 - **Inky (Qwen3.5 0.8B)** is the fastest (~23–29 tok/s) and fails every
   capability test: incoherent in character, says *"I am a model"* in the
   interview, loops on one `curl` forever, calls a tool on a plain "ping".
@@ -370,9 +371,11 @@ trusted blindly (misdescribed fix 1/3; premature "done" at 1.0).
 
 **Deployment note.** Per the local Hermes docs, a single-model Hermes agent
 *doesn't send a temperature* — the provider default applies, and this box's
-`fallback_model` block sets none. gemma's router default is 1.0. Pin it
-server-side (a `temp = 0.3` line in its llama-router preset) before relying
-on it. (Docs describe latest Hermes; installed is 0.20.5.)
+`fallback_model` block sets none. gemma's router default was 1.0.
+**Done 2026-09-18:** added a `[google/gemma-4-E2B-it-qat-q4_0-gguf:IT]` section
+with `temp = 0.3` to `~/llama-presets.ini` (backup:
+`llama-presets.ini.2026-09-18.bak`); `/props` confirms the default is now 0.3.
+(Docs describe latest Hermes; installed is 0.20.5.)
 
 ---
 
