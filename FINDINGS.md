@@ -51,11 +51,15 @@ through Hermes or Telegram itself. See [Open gaps](#open-gaps).
 
 **Deployed 2026-09-18:** Hermes' `fallback_model` now points at gemma
 (`http://127.0.0.1:8080/v1`); `llama-router.service` is enabled at boot.
-Backup: `~/.hermes/config.yaml.2026-09-18-pre-gemma-fallback.bak`. Measured at
-switch time: cold load ~16 s, and a warm reply ~7 s — but only with thinking
-off. Hermes sends no thinking toggle, so gemma reasons first: a one-sentence
-answer took **~50 s** and ~300 tokens. Every gym result above ran with
-thinking *off*, so thinking-on is an untested condition in production.
+Backup: `~/.hermes/config.yaml.2026-09-18-pre-gemma-fallback.bak`. At switch
+time Hermes' calls (no thinking toggle sent) made gemma reason first: a
+one-sentence answer took **~50 s** and ~300 tokens, while every gym result
+above ran with thinking *off*. **Fixed the same day:** `reasoning = off` added
+to gemma's router preset (backup: `llama-presets.ini.2026-09-18-pre-reasoning.bak`).
+Measured after the restart, with no thinking flag sent: cold load ~16 s, warm
+reply **~4 s**, ~26 tokens, zero reasoning. A request can still opt back in with
+`enable_thinking: true` (verified), so `INKY_THINKING=1` still works. Production
+now matches the conditions the gym tested.
 
 ---
 

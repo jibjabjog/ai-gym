@@ -10,7 +10,7 @@ Results live in `FINDINGS.md`; the front door is `README.md`.
 
 | Service | Port | Model | Notes |
 |---|---|---|---|
-| `llama-router.service` (user) | 8080 | gemma-4-E2B (+ presets) | **Hermes' live `fallback_model` since 2026-09-18 — enabled at boot, never stop it.** gemma's default temp is pinned to 0.3 in `~/llama-presets.ini` |
+| `llama-router.service` (user) | 8080 | gemma-4-E2B (+ presets) | **Hermes' live `fallback_model` since 2026-09-18 — enabled at boot, never stop it.** gemma's defaults are pinned in `~/llama-presets.ini`: `temp = 0.3`, `reasoning = off` |
 | `llama-qwen35-tiny.service` (user) | 45072 | Qwen3.5-0.8B, alias `Inky` | the previous fallback; always on — Hermes' auxiliary tasks and the `local-llama-ping` cron still use it |
 | `ollama.service` (system, v0.34.1) | 11434 | `spark-x2.5`, `SparkLLM/Spark-X2.5-4B` | loads on demand, unloads when idle |
 | `hermes-gateway.service` (user) | — | — | the live agent — never restart or reconfigure it |

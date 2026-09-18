@@ -17,9 +17,9 @@
 #   tests/hermes_failover.sh
 #   FAILOVER_TIMEOUT=1800 tests/hermes_failover.sh   # default 1200 s
 #
-# Expect it to be slow: gemma processes Hermes' full system prompt on CPU and
-# (with no thinking toggle sent) reasons before answering. The timing is part
-# of the result — it's how long a real failover turn would take.
+# Expect it to be slow: gemma processes Hermes' full system prompt on CPU
+# (thinking is off server-side, so replies themselves are quick). The timing
+# is part of the result — it's how long a real failover turn would take.
 set -uo pipefail
 
 HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
