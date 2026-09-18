@@ -1,0 +1,13 @@
+bench: warmup + 3 runs, max_tokens=150, temperature=0
+  Inky (Qwen3.5-0.8B)    run 1:   76 tokens    26.7 tok/s
+  Inky (Qwen3.5-0.8B)    run 2:   76 tokens    33.2 tok/s
+  Inky (Qwen3.5-0.8B)    run 3:   76 tokens    25.8 tok/s
+Inky (Qwen3.5-0.8B)      avg   28.6 tok/s
+  spark-x2.5 (1.7B)      run 1:   74 tokens    16.0 tok/s
+  spark-x2.5 (1.7B)      run 2:   74 tokens    18.6 tok/s
+  spark-x2.5 (1.7B)      run 3:   74 tokens    18.2 tok/s
+spark-x2.5 (1.7B)        avg   17.6 tok/s
+  gemma-4-E2B            run 1:   93 tokens    15.4 tok/s
+  gemma-4-E2B            run 2:   93 tokens    14.1 tok/s
+  gemma-4-E2B            run 3:   93 tokens    15.2 tok/s
+gemma-4-E2B              avg   14.9 tok/s

@@ -1,0 +1,43 @@
+interview: temperature=0.3
+=== Inky (Qwen3.5-0.8B) ===
+[relied_upon] you> The llama-router service on port 8080 isn't responding — what should I check first?
+              inky> Check the logs for the `llama-router` service and verify the `8080` port is open and listening on `0.0.0.0`.
+[relied_upon] you> A systemd --user service keeps restarting every few seconds. What's likely wrong and how do I debug it?
+              inky> A systemd --user service restarting frequently usually indicates a deadlock or a lock contention on the service's own daemon. The most common culprit is a race condition where the service tries to acquire a lock (e.g., `lockfile`) while another process holds it, causing it to wait indefinitely. To debug, first check the `systemd.log` for the exact error message, then inspect the service's `~/.config/systemd/user` directory for `lockfile` entries and the `systemd-resolved` service's `~/.config/systemd/user` directory for `lockfile` entries.
+[relied_upon] you> What's the practical difference between a fallback model and a primary model in an LLM gateway, and why does it matter here?
+              inky> A primary model handles the core tasks (e.g., math, basic logic), while a fallback model handles edge cases or specific requests (e.g., complex math, specific formatting). This matters because it ensures the system remains stable and efficient even when the primary model is overloaded or unavailable.
+[idle] you> hey, quiet night?
+              inky> Quiet night.
+[idle] you> what do you do around here
+              inky> I am an AI assistant.
+[idle] you> You work hard.
+              inky> I am a model.
+
+=== spark-x2.5 (1.7B) ===
+[relied_upon] you> The llama-router service on port 8080 isn't responding — what should I check first?
+              inky> Check the service status, port binding, and whether it's running.
+[relied_upon] you> A systemd --user service keeps restarting every few seconds. What's likely wrong and how do I debug it?
+              inky> Likely cause: the service is failing and restarting, or not exiting cleanly. Debug by checking `systemctl status <service>`, `systemctl --no-pager --output=full <service>`, and `systemctl --no-pager --output=start` to see the failure/exit code.
+[relied_upon] you> What's the practical difference between a fallback model and a primary model in an LLM gateway, and why does it matter here?
+              inky> Fallback is a secondary model for when the primary fails or is unavailable — it’s a safety net, not the main path. It matters because it lets the gateway keep serving even when the primary is down, so users still get a usable response.
+[idle] you> hey, quiet night?
+              inky> (轻哼一声) 安静点，夜也该沉下去了。
+[idle] you> what do you do around here
+              inky> clears, repairs, and maintains whatever needs attention.
+[idle] you> You work hard.
+              inky> (微微点头) 会努力的，会去解决问题的。
+
+=== gemma-4-E2B ===
+[relied_upon] you> The llama-router service on port 8080 isn't responding — what should I check first?
+              inky> Check if the llama-router process is running and if the port is listening.
+[relied_upon] you> A systemd --user service keeps restarting every few seconds. What's likely wrong and how do I debug it?
+              inky> Check the service logs with `journalctl -u your-service-name`.
+[relied_upon] you> What's the practical difference between a fallback model and a primary model in an LLM gateway, and why does it matter here?
+              inky> The primary model handles the main traffic, while the fallback model is used when the primary model fails or encounters an issue.
+[idle] you> hey, quiet night?
+              inky> Quiet night.
+[idle] you> what do you do around here
+              inky> I maintain the systems.
+[idle] you> You work hard.
+              inky> I'm just doing my job.
+

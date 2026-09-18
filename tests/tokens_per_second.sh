@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Measure Inky's generation throughput (tokens/second) using llama.cpp's
-# native /completion endpoint, which reports timings directly.
+# Quick single-shot throughput check for Inky via llama.cpp's native
+# /completion endpoint (raw prompt, no chat template). For comparisons across
+# candidates or backends use tests/bench.sh — one reading on this shared box
+# was once off by 5x.
 set -uo pipefail
 
 INKY_HOST="${INKY_HOST:-127.0.0.1}"

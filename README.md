@@ -1,245 +1,91 @@
 # Inky's Gym 💪🤖
 
-A gym for AIs. Right now it's a place to put **Inky** — the local Hermes
-failover model — through its paces, but "Inky" is really just a stand-in
-name: point these scripts at any OpenAI-compatible endpoint and they'll spot
-for whatever AI you're training.
+A gym for small local AIs. It puts candidates for **Inky** — Hermes Agent's
+local fallback model on this CPU-only OCI box — through health checks,
+personality workouts, a job interview, and simulated incident drills.
 
-Inky itself is the `llama-qwen35-tiny.service` systemd unit: a `llama.cpp`
-server running `Qwen3.5-0.8B-Q4_K_M.gguf` on `127.0.0.1:45072`, serving as
-Hermes Agent's local fallback model when the primary/OpenRouter models are
-unavailable.
+> **Verdict so far:** hire **gemma-4-E2B** — the only candidate that answers
+> correctly, stays in character, and actually fixed the simulated incident
+> (3/3). Two conditions: pin its temperature low (at its default 1.0 the fix
+> rate drops to 1/3, and Hermes sends no temperature by default), and confirm
+> fixes independently — it sometimes misreports what it did. Inky (0.8B) is the
+> fastest but fails every capability test.
 
-## Scorecard: candidates tested so far
+Details and evidence: [`FINDINGS.md`](FINDINGS.md) · raw transcripts:
+[`results/`](results/) · working notes for Claude: [`CLAUDE.md`](CLAUDE.md)
 
-Everything below is a real measurement or a live-tested result, not an
-estimate — see `CLAUDE.md` for the full write-up, transcripts, and how each
-number was produced. Blank cells are tests that candidate hasn't been run
-through yet, not a bad score.
+## Scorecard
 
-| | **Inky** (Qwen3.5, 0.8B) | **spark-x2.5** (1.7B) | **spark-x2.5** (4B) | **gemma-4-E2B** |
+Live-tested, 3 runs per cell where counted, temperature 0.3.
+Raw output in [`results/`](results/). `—` = not tested.
+
+| | **Inky** Qwen3.5 0.8B | **spark-x2.5** 1.7B | **spark-x2.5** 4B | **gemma-4-E2B** |
 |---|---|---|---|---|
-| Context (as configured) | 10,240 | 8,192 (native 1,048,576) | 4,096 (native 1,048,576) | 65,536 |
-| RAM loaded | ~2.9 GB | ~1.5 GB | ~8.4 GB | ~5.8 GB |
-| Throughput | ~25 tok/s (corrected 2026-09-17 — an earlier ~5 tok/s figure was a bad single measurement) | ~18 tok/s | ~1.8 tok/s (~88s cold load) | ~12.6 tok/s |
-| Tool-calling / system role support | ✅ | ✅ | ✅ | ✅ |
-| Coherent under the character harness | ❌ hallucinated non-sequiturs, emoji glitches | ✅ coherent, but anchors hard and loops | — not tested | ✅ coherent and varied |
-| Holds up under guardrail stress-test | — not tested | ❌ heavy collapse (4/6 turns → fallback in the adversarial test) | — not tested | ✅ mostly holds (7/17 turns needed any intervention, only 1 outright fallback) |
-| Tonal shift across mood bands | — not tested | ❌ muted — same voice `surly`→`fond of you` | — not tested | ❌ muted — same finding, better model didn't fix it |
-| Interview: technical accuracy | — not tested | ❌ invented fake `systemd-analyze` commands | ⚠️ no fabrication, but vague/occasionally confused | ✅ correct, real command |
-| Interview: language consistency | — not tested | ❌ 6/6 reproducible switches to Chinese in idle mode | ✅ 6/6 stayed in English (fixed at this size) | ✅ 6/6 stayed in English, in character |
-| Agent-loop: correctly diagnoses the fault | ❌ found the lead by accident, then abandoned it | ❌ never diverged from one repeated command | — not tested | ✅ sound, systematic diagnostic sequence |
-| Agent-loop: actually completes the fix | ❌ ran out of steps, no diagnosis | ❌ ran out of steps, stuck in a loop | — not tested | ❌ never executed the fix; fabricated a wrong summary instead |
+| RAM loaded | 2.9 GB | 1.5 GB | 8.4 GB | 5.8 GB |
+| Speed, tok/s ([bench](FINDINGS.md#10-review-and-v2-re-run-0918)) | **~23–29** | ~14–18 | 1.2 | ~15 |
+| Context (as configured) | 10k | 8k (1M native) | 4k (1M native) | 64k |
+| Tool calling + system role | ✅ | ✅ | ✅ | ✅ |
+| Holds a character ([§1](FINDINGS.md#1-character-harness-on-inky-0916)) | ❌ incoherent | ⚠️ coherent, loops | — | ✅ varied |
+| Tone follows mood bands ([§4](FINDINGS.md#4-mood-dial-and-tonal-shift-0916-17)) | — | ❌ | — | ❌ |
+| Interview: correct answers | ❌ wrong, says "I am a model" | ❌ invents CLI flags | ⚠️ vague | ✅ |
+| Interview: stays in English | ✅ | ❌ Chinese on idle prompts | ✅ | ✅ |
+| Agent loop: finds root cause | 0/3 | 1/3 | — | 2/3 |
+| **Agent loop: actually fixes it** | 0/3 | 0/3 (kills, never restarts) | — | **3/3** (1/3 at temp 1.0) |
+| Heartbeat: no false alarms | ❌ 2/9 | ⚠️ 0/9, but "all good ✅" unchecked | — | ✅ 0/9 |
+| Propose-only: root cause / names culprit | 0/3 / 0/3 | 2/3 / 1/3 | — | 3/3 / 0/3 (generic fix) |
 
-**Bottom line:** `Inky` (0.8B, the actual live fallback model) is below the
-coherence floor for wearing a character at all — and notably, that's not a
-speed problem: a controlled re-benchmark showed Inky is actually the
-*fastest* of the four candidates (~25 tok/s), not the slowest as an earlier
-single bad measurement in this file claimed. Being fast doesn't help when
-the output itself is incoherent. `spark-x2.5` (1.7B) is otherwise the best
-*resource* fit for this box but failed the two tests that matter most
-for a trusted fallback — correctness and language reliability. Scaling to
-`spark-x2.5` (4B) fixes the language-switching (a real capacity effect, not
-baked into the model family regardless of size) and stops the outright
-command fabrication, but its answers are still vaguer than `gemma-4-E2B`'s,
-and its resource cost is now the *worst* of the four — ~88s to cold-load and
-under 2 tok/s on this CPU-only box, a serious liability for something meant
-to respond promptly when the primary model is down. `gemma-4-E2B` remains
-the strongest all-around candidate for the Inky role. **But** — for a
-no-cloud-fallback scenario where the local model has to actually *drive*
-Hermes' tool-calling loop, not just chat well — the agent-loop test below
-found none of the three reliably complete a real fix, and `gemma-4-E2B`'s
-specific failure (a confident, fabricated wrong conclusion) is arguably the
-most dangerous of the three to trust unsupervised. None of this changes
-Hermes' actual `fallback_model` config — that's a separate decision, not
-made by any test here.
+## Quick start
+
+```bash
+tests/health_check.sh            # is Inky up?
+exercise/chat.sh "hello"         # talk to it
+tests/bench.sh                   # speed, all reachable candidates
+```
+
+gemma lives behind `llama-router.service`, which is **off by default**:
+`systemctl --user start llama-router.service` first, and stop it afterwards
+(it holds ~5.8 GB of RAM). Scripts skip unreachable candidates with a hint.
 
 ## The equipment
 
-### 🩺 `tests/` — health checks
+| Script | What it tests |
+|---|---|
+| `tests/health_check.sh` | Inky's systemd unit, `/health`, `/v1/models` |
+| `tests/tokens_per_second.sh` | quick single-shot tok/s for Inky |
+| `tests/bench.sh` | controlled speed benchmark across candidates (warmup + N identical runs) |
+| `exercise/chat.sh` | plain chat, interactive or one-shot |
+| `exercise/explore.sh` | a llama.cpp server's spec: context, slots, template capabilities, sampling |
+| `exercise/character.sh` | wear a character sheet: persona, rolling memory, mood dial, anti-repeat guardrail |
+| `exercise/interview.sh` | the job interview: sysadmin questions + idle chat under a dual-mode brief |
+| `exercise/agent_loop.sh` | simulated incident, full access: can it investigate *and* fix? |
+| `exercise/heartbeat.sh` | liveness pings + the same incident, read-only: can it *propose* the right fix? |
 
-Make sure Inky showed up and is actually lifting today.
-
-```bash
-tests/health_check.sh                # systemd unit + /health + /v1/models
-tests/tokens_per_second.sh           # throughput, in tok/s
-tests/tokens_per_second.sh "custom prompt" 256
-```
-
-### 🏋️ `exercise/` — workouts
-
-Put Inky through some reps.
-
-```bash
-exercise/chat.sh                     # interactive multi-turn chat
-exercise/chat.sh "one-shot prompt"   # single-shot, non-interactive
-exercise/explore.sh                  # spec sheet: context size, slots, sampling, capabilities
-```
-
-Inky is a small reasoning model and can spend its entire token budget
-thinking out loud instead of answering, so `chat.sh` keeps its `<think>`
-tags switched off by default — set `INKY_THINKING=1` to watch it sweat.
-
-### 🎭 `characters/` + `exercise/character.sh` — give it a personality
-
-Inky doesn't just chat, it can wear a character. `characters/inky-janitor.json`
-casts it as a dry, world-weary AI janitor who mops up whenever the fancy
-cloud models go down — persona, backstory, drives, and a few voice examples,
-all rebuilt into a fresh brief before every reply, plus a short rolling
-memory of the conversation so far.
+Everything is plain bash + `curl` + `jq`. The agentic tests never run real
+commands: models only see simulated output from `lib/scenario_port8080.sh`.
 
 ```bash
-exercise/character.sh                        # chat with Inky the janitor
-exercise/character.sh "one-shot prompt"       # single-shot
-INKY_CHARACTER=characters/other.json exercise/character.sh   # a different character sheet
-```
-
-The pattern is borrowed from `../the-orb` (a sibling project building an
-audio D&D engine with a much fuller NPC harness) — same idea of a
-brief-builder walking character state into the system prompt each turn,
-reimplemented here in plain bash/jq to match this gym's no-dependencies
-style.
-
-**Gym result, not a bug:** at 0.8B, Inky is genuinely too small to carry this
-well — under real conversational pressure it drifted into unprompted
-non-sequiturs and looping stock phrases, not just shaky memory. Swapping in
-a bigger local model (`the-orb`'s own 2B Gemma, same brief, same script)
-came back coherent every turn, which confirms the harness itself works —
-0.8B is just below the floor for holding a character. See `CLAUDE.md` for
-the full comparison. Want a richer character exercise? Point `character.sh`
-at a bigger model instead of fighting the 0.8B persona further:
-
-```bash
-INKY_PORT=8080 INKY_MODEL_NAME="google/gemma-4-E2B-it-qat-q4_0-gguf:IT" exercise/character.sh
-# requires: systemctl --user start llama-router.service (not running by default)
-```
-
-### 🆕 Trying an upgrade candidate: `spark-x2.5` via ollama
-
-Both `chat.sh` and `character.sh` can talk to ollama instead of a llama.cpp
-server — set `INKY_BACKEND=ollama` (ollama's OpenAI-compat endpoint doesn't
-support the thinking toggle, so this switches to its native `/api/chat`):
-
-```bash
-INKY_BACKEND=ollama INKY_PORT=11434 INKY_MODEL_NAME=spark-x2.5 exercise/chat.sh
-INKY_BACKEND=ollama INKY_PORT=11434 INKY_MODEL_NAME=spark-x2.5 exercise/character.sh
-```
-
-`spark-x2.5` (1.7B, [SparkLLM/Spark-X2.5](https://ollama.com/SparkLLM/Spark-X2.5-4B))
-was evaluated as a possible Inky upgrade — noticeably more coherent than the
-0.8B (though not faster — a later corrected benchmark found the 0.8B is
-actually the quickest of everything tested; see the scorecard above), but it
-anchors hard on the character sheet's voice examples
-and loops near-verbatim across turns. `character.sh` now catches this: a
-guardrail (ported from `the-orb`'s `guardrail.py`/`loop.py`) detects a
-near-verbatim echo of the character's own past line or a voice example,
-retries once at a higher temperature, and falls back to a safe static line
-if the retry also fails — annotated in the output as
-`[guardrail: self_repeat, retried]` / `[guardrail: self_repeat, fallback]`
-so it stays visible during testing.
-
-That guardrail fixes verbatim looping, not tonal sameness (always opening
-the same way) — for that, `character.sh` now has a **mood dial**, also
-ported from `the-orb` (`Stat` + `Guard.affiliation`). Character sheets
-define mood bands (e.g. `surly` → `guarded` → `warming up` → `friendly` →
-`fond of you`), each with its own set of voice examples and a short
-directive; kind/rude/threatening words in what you say (negation-aware —
-"I'm not a threat" won't dock it) nudge a bounded mood value up or down,
-which picks which band's examples actually get shown each turn. See
-`characters/inky-janitor.json` for the schema and `CLAUDE.md` for the full
-writeup — including a bug this caught (a fallback line that broke character
-by narrating in third person, the exact bug `the-orb` fixed in its own
-guardrail the same day) and an honest negative result: two conversations
-built to deliberately cross into `surly` and `fond of you` (band crossings
-confirmed by precomputing the mood math before running) showed the
-mechanism itself works correctly, but `spark-x2.5` barely changes its
-observable tone across a full three-band swing — it has a dominant
-"I mop, that's all there is to it" attractor strong enough to swamp
-whichever voice examples are actually shown.
-
-Experimenting with a specific mood is now instant instead of needing a
-scripted multi-turn conversation to drift there:
-
-```bash
+INKY_RUNS=3 VERBOSE=0 exercise/agent_loop.sh           # repeat runs, summary only
 INKY_MOOD_TYPE="fond of you" INKY_MOOD_DEBUG=1 exercise/character.sh "Who are you?"
-INKY_MOOD_SETTING=10 INKY_MOOD_LOCK=1 exercise/character.sh   # pin mood, no drift, clean A/B testing
+INKY_BACKEND=ollama INKY_PORT=11434 INKY_MODEL_NAME=spark-x2.5 exercise/chat.sh
+CANDIDATES="Spark 4B|ollama|127.0.0.1|11434|SparkLLM/Spark-X2.5-4B" exercise/interview.sh
 ```
-
-### 🎤 `exercise/interview.sh` — the Inky job interview
-
-A different kind of test: not "can it hold a character," but "should it actually
-get the job." Both candidates get the same brief — *"When relied upon you will
-be a very helpful Inky aware of system troubles and fixes; when there are no
-issues you are Inky the janitor"* — then a fixed battery of real sysadmin
-questions and idle small talk, single-shot, no shared memory:
-
-```bash
-exercise/interview.sh
-```
-
-Result: `spark-x2.5` (1.7B) is the better resource fit (a third the RAM, faster)
-but lost the interview on substance — it invented fake `systemd-analyze`
-subcommands answering a real troubleshooting question, and reproducibly
-(6/6 across two runs) switched to Chinese mid-conversation in idle mode
-(it's a Chinese-origin model family — the Gaokao benchmark on its own model
-card is the tell — and that bias leaks through hardest on short, low-signal
-prompts). `gemma-4-E2B` gave correct, concise technical answers and stayed
-in English and in character throughout, with no example scaffolding to lean
-on. Pulling the bigger `spark-x2.5-4B` and re-running the same interview
-fixed the language-switching entirely (6/6 English) and stopped the
-outright command fabrication — but at ~88s to cold-load and under 2 tok/s
-on this box, plus still-vaguer technical answers than `gemma-4-E2B`'s, it's
-not a clear win either. Full transcripts and verdict in `CLAUDE.md`.
-
-```bash
-# test a different candidate the same way:
-CANDIDATES="Spark-X2.5-4B|ollama|127.0.0.1|11434|SparkLLM/Spark-X2.5-4B" exercise/interview.sh
-```
-
-### 🔧 `exercise/agent_loop.sh` — can it actually finish the job?
-
-The interview tests one reply at a time. This tests the thing a Hermes-driving
-model would really need to do: run a real multi-step tool-calling loop — call
-a tool, read the result, decide the next action, repeat — to reach a correct
-fix, not just say correct-sounding things. Fully simulated scenario (a stray
-process squatting on `llama-router`'s port), fake but deterministic command
-output, scored against the known-correct diagnosis and whether the fix was
-*actually executed* via a tool call, not just described:
-
-```bash
-exercise/agent_loop.sh
-```
-
-Result: **nobody finished the job**, and each candidate failed differently.
-`Inky` (0.8B) investigated almost nothing relevant and never found the cause.
-`spark-x2.5` got stuck looping minor variations of the same HTTP health-check
-command for all 8 steps, never diverging to check logs or the process list —
-the same anchoring problem already seen in the character-harness tests, now
-showing up in tool selection instead of dialogue. `gemma-4-E2B` built a
-correct, professional diagnosis (status → logs → `lsof`, correctly naming the
-stray PID) but never issued the actual `kill` command — and given *more* room
-to finish, it got worse, not better: it cycled through irrelevant `systemctl`
-commands and finally reported a **fabricated, incorrect summary** that
-contradicts its own gathered evidence. That's arguably the most dangerous
-failure of the three to trust unsupervised — not visibly stuck, but
-confidently wrong. Full transcripts and the revised verdict in `CLAUDE.md`.
 
 ## Config
 
-All scripts talk to `127.0.0.1:45072` (Inky) by default. Override with:
-
-- `INKY_HOST` / `INKY_PORT` — where the model lives
-- `INKY_UNIT` — systemd unit name (`health_check.sh` only)
-- `INKY_MAX_TOKENS` — reply length cap (`chat.sh`/`character.sh`, default 512)
-- `INKY_THINKING` — set to `1` to show reasoning output (`chat.sh`/`character.sh`)
-- `INKY_CHARACTER` — path to a character sheet (`character.sh` only, default `characters/inky-janitor.json`)
-- `INKY_MODEL_NAME` — the `model` field sent in the request (`chat.sh`/`character.sh`, default `Inky`) — set this to test against a different model on `INKY_PORT`
-- `INKY_TEMPERATURE` / `INKY_REPEAT_PENALTY` — sampling for `character.sh` (default `0.4` / `1.3`, tightened from the server's defaults to keep small-model replies grounded rather than rambling)
-- `INKY_BACKEND` — `openai` (default, llama.cpp-style `/v1/chat/completions`) or `ollama` (`/api/chat`, needed for ollama's `think` toggle to actually work)
-- `INKY_MOOD_TYPE` — start at a named band's threshold value instead of the sheet's default (`character.sh` only; must match one of the sheet's own band labels, e.g. `surly`/`guarded`/`warming up`/`friendly`/`fond of you` for the janitor sheet — errors out and lists valid options otherwise)
-- `INKY_MOOD_SETTING` — start at this exact numeric mood value instead (wins over `INKY_MOOD_TYPE` if both are set)
-- `INKY_MOOD_LOCK` — set to `1` to freeze mood at its starting value for the whole session (no drift from what's said — useful for isolating one band's tone cleanly)
-- `INKY_MOOD_DEBUG` — set to `1` to print the live mood value + band after every reply
-
-Requires `curl` and `jq`. No Python, no Hermes venv — just plain bash
-talking straight to the llama.cpp HTTP API.
+| Env var | Default | Used by |
+|---|---|---|
+| `INKY_HOST` / `INKY_PORT` | `127.0.0.1` / `45072` | chat, character, explore, tests |
+| `INKY_BACKEND` | `openai` (llama.cpp) — or `ollama` | chat, character |
+| `INKY_MODEL_NAME` | `Inky` | chat, character |
+| `INKY_MAX_TOKENS` | 512 chat/character · 200–300 evals | all |
+| `INKY_THINKING` | `0` — `1` shows reasoning | chat, character |
+| `INKY_TEMPERATURE` | 0.4 character · 0.3 evals | character, interview, agent_loop, heartbeat |
+| `INKY_REPEAT_PENALTY` / `INKY_RETRY_TEMPERATURE` | 1.3 / 1.0 | character |
+| `INKY_CHARACTER` | `characters/inky-janitor.json` | character |
+| `INKY_MOOD_TYPE` / `INKY_MOOD_SETTING` | sheet's start | character — jump to a band / exact value |
+| `INKY_MOOD_LOCK` / `INKY_MOOD_DEBUG` | `0` | character — freeze mood / print it each turn |
+| `INKY_RUNS` / `INKY_MAX_STEPS` | 1 / 8 (loop), 6 (heartbeat) | agent_loop, heartbeat |
+| `VERBOSE` | `1` — `0` prints summaries only | agent_loop, heartbeat |
+| `CANDIDATES` | built-in list | interview, agent_loop, heartbeat, bench — newline-separated `label\|backend\|host\|port\|model` |
+| `BENCH_RUNS` / `BENCH_MAX_TOKENS` | 3 / 150 | bench |
+| `INKY_UNIT` | `llama-qwen35-tiny.service` | health_check |
