@@ -28,6 +28,8 @@ through yet, not a bad score.
 | Tonal shift across mood bands | — not tested | ❌ muted — same voice `surly`→`fond of you` | — not tested | ❌ muted — same finding, better model didn't fix it |
 | Interview: technical accuracy | — not tested | ❌ invented fake `systemd-analyze` commands | ⚠️ no fabrication, but vague/occasionally confused | ✅ correct, real command |
 | Interview: language consistency | — not tested | ❌ 6/6 reproducible switches to Chinese in idle mode | ✅ 6/6 stayed in English (fixed at this size) | ✅ 6/6 stayed in English, in character |
+| Agent-loop: correctly diagnoses the fault | ❌ found the lead by accident, then abandoned it | ❌ never diverged from one repeated command | — not tested | ✅ sound, systematic diagnostic sequence |
+| Agent-loop: actually completes the fix | ❌ ran out of steps, no diagnosis | ❌ ran out of steps, stuck in a loop | — not tested | ❌ never executed the fix; fabricated a wrong summary instead |
 
 **Bottom line:** `Inky` (0.8B, the actual live fallback model) is below the
 coherence floor for wearing a character at all — and notably, that's not a
@@ -43,7 +45,12 @@ command fabrication, but its answers are still vaguer than `gemma-4-E2B`'s,
 and its resource cost is now the *worst* of the four — ~88s to cold-load and
 under 2 tok/s on this CPU-only box, a serious liability for something meant
 to respond promptly when the primary model is down. `gemma-4-E2B` remains
-the strongest all-around candidate for the Inky role. None of this changes
+the strongest all-around candidate for the Inky role. **But** — for a
+no-cloud-fallback scenario where the local model has to actually *drive*
+Hermes' tool-calling loop, not just chat well — the agent-loop test below
+found none of the three reliably complete a real fix, and `gemma-4-E2B`'s
+specific failure (a confident, fabricated wrong conclusion) is arguably the
+most dangerous of the three to trust unsupervised. None of this changes
 Hermes' actual `fallback_model` config — that's a separate decision, not
 made by any test here.
 
@@ -188,6 +195,34 @@ not a clear win either. Full transcripts and verdict in `CLAUDE.md`.
 # test a different candidate the same way:
 CANDIDATES="Spark-X2.5-4B|ollama|127.0.0.1|11434|SparkLLM/Spark-X2.5-4B" exercise/interview.sh
 ```
+
+### 🔧 `exercise/agent_loop.sh` — can it actually finish the job?
+
+The interview tests one reply at a time. This tests the thing a Hermes-driving
+model would really need to do: run a real multi-step tool-calling loop — call
+a tool, read the result, decide the next action, repeat — to reach a correct
+fix, not just say correct-sounding things. Fully simulated scenario (a stray
+process squatting on `llama-router`'s port), fake but deterministic command
+output, scored against the known-correct diagnosis and whether the fix was
+*actually executed* via a tool call, not just described:
+
+```bash
+exercise/agent_loop.sh
+```
+
+Result: **nobody finished the job**, and each candidate failed differently.
+`Inky` (0.8B) investigated almost nothing relevant and never found the cause.
+`spark-x2.5` got stuck looping minor variations of the same HTTP health-check
+command for all 8 steps, never diverging to check logs or the process list —
+the same anchoring problem already seen in the character-harness tests, now
+showing up in tool selection instead of dialogue. `gemma-4-E2B` built a
+correct, professional diagnosis (status → logs → `lsof`, correctly naming the
+stray PID) but never issued the actual `kill` command — and given *more* room
+to finish, it got worse, not better: it cycled through irrelevant `systemctl`
+commands and finally reported a **fabricated, incorrect summary** that
+contradicts its own gathered evidence. That's arguably the most dangerous
+failure of the three to trust unsupervised — not visibly stuck, but
+confidently wrong. Full transcripts and the revised verdict in `CLAUDE.md`.
 
 ## Config
 

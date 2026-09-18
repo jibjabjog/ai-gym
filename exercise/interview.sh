@@ -32,8 +32,10 @@ PROMPTS=(
 )
 
 # candidate label|backend|host|port|model — the two candidates this
-# specific interview is about. Override CANDIDATES externally (space-
-# separated, same pipe-delimited shape) to test others the same way.
+# specific interview is about. Override CANDIDATES externally
+# (newline-separated, same pipe-delimited shape per line — not
+# space-separated, which breaks on any label containing a space) to test
+# others the same way.
 DEFAULT_CANDIDATES=(
     "spark-x2.5 (1.7B)|ollama|127.0.0.1|11434|spark-x2.5"
     "gemma-4-E2B|openai|127.0.0.1|8080|google/gemma-4-E2B-it-qat-q4_0-gguf:IT"
@@ -60,7 +62,7 @@ ask() {
 }
 
 candidates=("${DEFAULT_CANDIDATES[@]}")
-[[ -n "${CANDIDATES:-}" ]] && IFS=' ' read -r -a candidates <<< "${CANDIDATES}"
+[[ -n "${CANDIDATES:-}" ]] && mapfile -t candidates <<< "${CANDIDATES}"
 
 for candidate in "${candidates[@]}"; do
     IFS='|' read -r label backend host port model <<< "${candidate}"
