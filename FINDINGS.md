@@ -49,6 +49,14 @@ human (or a health check) confirming any fix.** As of the v2 re-run (§10):
 **Caveats:** simulated incident, one scenario, 3 runs per cell, never run
 through Hermes or Telegram itself. See [Open gaps](#open-gaps).
 
+**Deployed 2026-09-18:** Hermes' `fallback_model` now points at gemma
+(`http://127.0.0.1:8080/v1`); `llama-router.service` is enabled at boot.
+Backup: `~/.hermes/config.yaml.2026-09-18-pre-gemma-fallback.bak`. Measured at
+switch time: cold load ~16 s, and a warm reply ~7 s — but only with thinking
+off. Hermes sends no thinking toggle, so gemma reasons first: a one-sentence
+answer took **~50 s** and ~300 tokens. Every gym result above ran with
+thinking *off*, so thinking-on is an untested condition in production.
+
 ---
 
 ## 1. Character harness on Inky (09‑16)

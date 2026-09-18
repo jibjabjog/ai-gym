@@ -84,7 +84,7 @@ candidate_reachable() {
     local label="$1" backend="$2" base_url="$3"
     llm_healthy "${backend}" "${base_url}" && return 0
     local hint=""
-    [[ "${base_url}" == *":8080" ]] && hint=" (is llama-router.service started? it's off by default)"
+    [[ "${base_url}" == *":8080" ]] && hint=" (llama-router.service is down — it's Hermes' live fallback, check it)"
     [[ "${backend}" == "ollama" ]] && hint=" (is ollama running?)"
     echo "SKIP ${label}: ${base_url} not reachable${hint}"
     return 1

@@ -10,16 +10,18 @@ Results live in `FINDINGS.md`; the front door is `README.md`.
 
 | Service | Port | Model | Notes |
 |---|---|---|---|
-| `llama-qwen35-tiny.service` (user) | 45072 | Qwen3.5-0.8B, alias `Inky` | the live Hermes `fallback_model`; always on |
-| `llama-router.service` (user) | 8080 | gemma-4-E2B (+ presets) | **off by default** — start for a test, stop after. gemma's default temp is pinned to 0.3 in `~/llama-presets.ini` |
+| `llama-router.service` (user) | 8080 | gemma-4-E2B (+ presets) | **Hermes' live `fallback_model` since 2026-09-18 — enabled at boot, never stop it.** gemma's default temp is pinned to 0.3 in `~/llama-presets.ini` |
+| `llama-qwen35-tiny.service` (user) | 45072 | Qwen3.5-0.8B, alias `Inky` | the previous fallback; always on — Hermes' auxiliary tasks and the `local-llama-ping` cron still use it |
 | `ollama.service` (system, v0.34.1) | 11434 | `spark-x2.5`, `SparkLLM/Spark-X2.5-4B` | loads on demand, unloads when idle |
 | `hermes-gateway.service` (user) | — | — | the live agent — never restart or reconfigure it |
 
 - **RAM (23 GB total, ~7–11 GB free):** gemma ≈ 5.8 GB, spark-4B ≈ 8.4 GB,
-  spark-1.7B ≈ 1.5 GB. Never load spark-4B and gemma together; `ollama stop <model>`
-  to unload.
+  spark-1.7B ≈ 1.5 GB. gemma stays loaded once Hermes has used it, so **don't load
+  spark-4B at all** — both together would starve the live fallback. `ollama stop <model>` to unload.
 - `~/llama-presets.ini`'s `qwen35-fast` preset points at a missing `.gguf` — pre-existing, not ours.
-- Changing Hermes' actual `fallback_model` (`~/.hermes/config.yaml`) is out of scope for this gym; ask first.
+- Hermes' `fallback_model` (`~/.hermes/config.yaml`) points at gemma on 8080. Change it only
+  when asked, with `~/.hermes/scripts/set_fallback_model.py <model> <port>` (it edits just those lines).
+  Pre-switch backup: `~/.hermes/config.yaml.2026-09-18-pre-gemma-fallback.bak`.
 
 ## Layout
 

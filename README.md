@@ -42,9 +42,9 @@ exercise/chat.sh "hello"         # talk to it
 tests/bench.sh                   # speed, all reachable candidates
 ```
 
-gemma lives behind `llama-router.service`, which is **off by default**:
-`systemctl --user start llama-router.service` first, and stop it afterwards
-(it holds ~5.8 GB of RAM). Scripts skip unreachable candidates with a hint.
+gemma lives behind `llama-router.service`, which is now **Hermes' live
+fallback** (since 2026-09-18) — it stays running; don't stop it after tests.
+Scripts skip unreachable candidates with a hint.
 
 ## The equipment
 
@@ -53,6 +53,7 @@ gemma lives behind `llama-router.service`, which is **off by default**:
 | `tests/health_check.sh` | Inky's systemd unit, `/health`, `/v1/models` |
 | `tests/tokens_per_second.sh` | quick single-shot tok/s for Inky |
 | `tests/bench.sh` | controlled speed benchmark across candidates (warmup + N identical runs) |
+| `tests/hermes_failover.sh` | **real Hermes**: forces one throwaway session to fail over to the fallback model and proves it happened (log + server + result) — live gateway untouched |
 | `exercise/chat.sh` | plain chat, interactive or one-shot |
 | `exercise/explore.sh` | a llama.cpp server's spec: context, slots, template capabilities, sampling |
 | `exercise/character.sh` | wear a character sheet: persona, rolling memory, mood dial, anti-repeat guardrail |
