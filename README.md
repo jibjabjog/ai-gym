@@ -46,6 +46,13 @@ gemma lives behind `llama-router.service`, which is now **Hermes' live
 fallback** (since 2026-09-18) — it stays running; don't stop it after tests.
 Scripts skip unreachable candidates with a hint.
 
+### Is the fallback actually ready?
+
+`~/.hermes/scripts/fallback_guard.sh -v` (also runs every 5 min from cron) answers with a real
+completion, not just an open port. Gemma is kept resident (`load-on-startup`) and its prompt cache is kept
+warm with Hermes' real Telegram prompt: a failover turn costs **~1–2 s warm, ~30 min cold**
+(19k-token prompt at ~11 tok/s on 4 cores) — see FINDINGS §11 for why, and the three settings that keep it warm.
+
 ## The equipment
 
 | Script | What it tests |
@@ -53,7 +60,7 @@ Scripts skip unreachable candidates with a hint.
 | `tests/health_check.sh` | Inky's systemd unit, `/health`, `/v1/models` |
 | `tests/tokens_per_second.sh` | quick single-shot tok/s for Inky |
 | `tests/bench.sh` | controlled speed benchmark across candidates (warmup + N identical runs) |
-| `tests/hermes_failover.sh` | **real Hermes**: forces one throwaway session to fail over to the fallback model and proves it happened (log + server + result) — live gateway untouched |
+| `tests/hermes_failover.sh` | **real Hermes**: forces one throwaway session (bogus primary model) to fail over to gemma. `QUICK` (default, ~5 s) passes once Hermes' own socket reaches the fallback; `FULL=1` waits for the reply. Refuses to run while gemma is busy; live gateway untouched |
 | `exercise/chat.sh` | plain chat, interactive or one-shot |
 | `exercise/explore.sh` | a llama.cpp server's spec: context, slots, template capabilities, sampling |
 | `exercise/character.sh` | wear a character sheet: persona, rolling memory, mood dial, anti-repeat guardrail |

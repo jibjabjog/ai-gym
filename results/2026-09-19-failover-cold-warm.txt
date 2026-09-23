@@ -1,0 +1,70 @@
+# Hermes -> gemma failover: cold vs warm prefill (2026-09-19 .. 09-23)
+# Raw evidence for FINDINGS.md section 11. Journal lines are from llama-router.service (user); guard lines from ~/.hermes/logs/fallback_guard.log.
+
+## 1. Router gives up on any request over 600 s (default --timeout), 2026-09-19 17:11:39 -> 17:21:39
+17:11:39 I srv  proxy_reques: proxying request to model google/gemma-4-E2B-it-qat-q4_0-gguf:IT on port 38841
+17:21:39 E srv    operator(): http client error: Failed to read connection
+17:21:40 W srv          next: stopping wait for next result due to should_stop condition (adjust the --timeout argument if needed)
+17:21:40 W srv          stop: cancel task, id_task = 389
+
+## 2. One cold prefill of Hermes' Telegram prompt with --timeout 3600 (19,058 tokens), slot 2, 4 slots
+17:36:37 I slot print_timing: id  2 | task 5 | prompt processing, n_tokens =   2048, progress = 0.11, t =  50.35 s / 40.67 tokens per second
+17:37:47 I slot print_timing: id  2 | task 5 | prompt processing, n_tokens =   4096, progress = 0.21, t = 120.16 s / 34.09 tokens per second
+17:39:16 I slot print_timing: id  2 | task 5 | prompt processing, n_tokens =   6144, progress = 0.32, t = 208.43 s / 29.48 tokens per second
+17:41:05 I slot print_timing: id  2 | task 5 | prompt processing, n_tokens =   8192, progress = 0.43, t = 318.13 s / 25.75 tokens per second
+17:44:12 I slot print_timing: id  2 | task 5 | prompt processing, n_tokens =  10240, progress = 0.54, t = 505.30 s / 20.27 tokens per second
+17:48:51 I slot print_timing: id  2 | task 5 | prompt processing, n_tokens =  12288, progress = 0.64, t = 784.19 s / 15.67 tokens per second
+17:53:58 I slot print_timing: id  2 | task 5 | prompt processing, n_tokens =  14336, progress = 0.75, t = 1091.11 s / 13.14 tokens per second
+17:59:36 I slot print_timing: id  2 | task 5 | prompt processing, n_tokens =  16384, progress = 0.86, t = 1428.44 s / 11.47 tokens per second
+18:03:43 I slot print_timing: id  2 | task 5 | prompt processing, n_tokens =  18432, progress = 0.97, t = 1675.94 s / 11.00 tokens per second
+18:03:56 I slot print_timing: id  2 | task 5 | prompt processing, n_tokens =  18542, progress = 0.97, t = 1688.86 s / 10.98 tokens per second
+18:05:32 I slot print_timing: id  2 | task 5 | prompt processing, n_tokens =  19049, progress = 1.00, t = 1784.71 s / 10.67 tokens per second
+18:05:34 I slot print_timing: id  2 | task 5 | prompt processing, n_tokens =  19054, progress = 1.00, t = 1787.12 s / 10.66 tokens per second
+
+## 3. With 4 slots the finished prompt is evicted by the next task and cannot be restored (18:05:51 ping, 18:05:57 warm re-send)
+18:05:50 I slot get_availabl: id  2 | task -1 | selected slot by LCP similarity, sim_best = 0.200 (> 0.100 thold), f_keep = 0.000
+18:05:50 I srv  get_availabl: updating prompt cache
+18:05:51 I srv          load:  - looking for better prompt, base f_keep = 0.000, sim = 0.200
+18:05:51 I srv          load:  - found better prompt with f_keep = 0.909, sim = 1.000
+18:05:51 I srv        update:  - cache state: 1 prompts, 48.559 MiB (limits: 8192.000 MiB, 65536 tokens, 3215123 est)
+18:05:51 I srv        update:    - prompt 0xbb7c460cf870:   19058 tokens, checkpoints:  1,    48.559 MiB
+18:05:51 I srv  get_availabl: prompt cache update took 32.08 ms
+18:05:57 I slot get_availabl: id  1 | task -1 | selected slot by LRU, t_last = -1
+18:05:57 I srv  get_availabl: updating prompt cache
+18:05:57 I srv          load:  - looking for better prompt, base f_keep = -1.000, sim = 0.000
+18:05:57 I srv          load:  - found better prompt with f_keep = 1.000, sim = 1.000
+18:05:57 E state_read_meta: failed to find available cells in kv cache
+18:05:57 E state_seq_set_data: error loading state: failed to restore kv cache
+18:05:57 W slot  prompt_load: id  1 | task -1 | failed to load prompt from cache
+18:05:57 I slot prompt_clear: id  1 | task -1 | clearing prompt with 0 tokens
+18:05:57 I srv        update:  - cache state: 1 prompts, 48.559 MiB (limits: 8192.000 MiB, 65536 tokens, 3215123 est)
+18:05:57 I srv        update:    - prompt 0xbb7c460cf870:   19058 tokens, checkpoints:  1,    48.559 MiB
+18:05:57 I srv  get_availabl: prompt cache update took 11.23 ms
+18:05:57 I slot slot_save_an: id  2 | task -1 | saving idle slot to prompt cache
+18:05:57 I slot prompt_clear: id  2 | task -1 | clearing prompt with 11 tokens
+18:05:57 I srv        update:  - cache state: 2 prompts, 48.618 MiB (limits: 8192.000 MiB, 65536 tokens, 3213100 est)
+18:05:57 I srv        update:    - prompt 0xbb7c460cf870:   19058 tokens, checkpoints:  1,    48.559 MiB
+18:05:57 I srv        update:    - prompt 0xf89430057290:      11 tokens, checkpoints:  1,     0.059 MiB
+
+## 4. The cold/finished/cold cycle from the 4-slot default (guard log), then parallel = 1 at 2026-09-22 15:51
+[2026-09-22 14:05:50] warm: telegram prefill finished — prompt is now warm (0/19058 tokens were cached)
+[2026-09-22 14:06:19] warm: telegram prompt is COLD — prefilling in the background (~17-20 min at ~20 tok/s; pid 1496913)
+[2026-09-22 14:25:50] warm: telegram prefill finished — prompt is now warm (0/19058 tokens were cached)
+[2026-09-22 14:26:19] warm: telegram prompt is COLD — prefilling in the background (~17-20 min at ~20 tok/s; pid 1545862)
+[2026-09-22 14:45:55] warm: telegram prefill finished — prompt is now warm (0/19058 tokens were cached)
+[2026-09-22 14:51:19] warm: telegram prompt is COLD — prefilling in the background (~17-20 min at ~20 tok/s; pid 1607231)
+[2026-09-22 15:10:50] warm: telegram prefill finished — prompt is now warm (0/19058 tokens were cached)
+[2026-09-22 15:11:19] warm: telegram prompt is COLD — prefilling in the background (~17-20 min at ~20 tok/s; pid 1656314)
+[2026-09-22 15:30:55] warm: telegram prefill finished — prompt is now warm (0/19058 tokens were cached)
+[2026-09-22 15:36:21] warm: telegram prompt is COLD — prefilling in the background (~17-20 min at ~20 tok/s; pid 1718071)
+[2026-09-22 15:52:19] warm: telegram prompt is COLD — prefilling in the background (~17-20 min at ~20 tok/s; pid 1758654)
+[2026-09-22 16:12:49] warm: telegram prefill finished — prompt is now warm (0/19058 tokens were cached)
+
+## 5. Steady state after parallel = 1 (last 6 ticks)
+[2026-09-23 20:55:52] warm: telegram prompt ready: 19057/19058 tokens served from cache, 1s
+[2026-09-23 21:00:52] warm: telegram prompt ready: 19057/19058 tokens served from cache, 1s
+[2026-09-23 21:05:51] warm: telegram prompt ready: 19057/19058 tokens served from cache, 1s
+[2026-09-23 21:10:53] warm: telegram prompt ready: 19057/19058 tokens served from cache, 1s
+[2026-09-23 21:15:55] warm: telegram prompt ready: 19057/19058 tokens served from cache, 1s
+[2026-09-23 21:20:57] warm: telegram prompt ready: 19057/19058 tokens served from cache, 2s
+cache-hit ticks 2026-09-22 16:12 -> now: 351

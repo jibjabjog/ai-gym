@@ -10,7 +10,7 @@ Results live in `FINDINGS.md`; the front door is `README.md`.
 
 | Service | Port | Model | Notes |
 |---|---|---|---|
-| `llama-router.service` (user) | 8080 | gemma-4-E2B (+ presets) | **Hermes' live `fallback_model` since 2026-09-18 — enabled at boot, never stop it.** gemma's defaults are pinned in `~/llama-presets.ini`: `temp = 0.3`, `reasoning = off` |
+| `llama-router.service` (user) | 8080 | gemma-4-E2B (+ presets) | **Hermes' live `fallback_model` since 2026-09-18 — enabled at boot, never stop it.** gemma's settings are pinned in `~/llama-presets.ini`: `temp = 0.3`, `reasoning = off`, `load-on-startup = true`, **`parallel = 1`**. The unit carries **`--timeout 3600`** (default 600 s cancels any long prefill) |
 | `llama-qwen35-tiny.service` (user) | 45072 | Qwen3.5-0.8B, alias `Inky` | the previous fallback; always on — Hermes' auxiliary tasks and the `local-llama-ping` cron still use it |
 | `ollama.service` (system, v0.34.1) | 11434 | `spark-x2.5`, `SparkLLM/Spark-X2.5-4B` | loads on demand, unloads when idle |
 | `hermes-gateway.service` (user) | — | — | the live agent — never restart or reconfigure it |
@@ -19,6 +19,19 @@ Results live in `FINDINGS.md`; the front door is `README.md`.
   spark-1.7B ≈ 1.5 GB. gemma stays loaded once Hermes has used it, so **don't load
   spark-4B at all** — both together would starve the live fallback. `ollama stop <model>` to unload.
 - `~/llama-presets.ini`'s `qwen35-fast` preset points at a missing `.gguf` — pre-existing, not ours.
+- **Keeping the fallback alive and warm** (`~/.hermes/scripts/`, both silent unless something breaks):
+  `fallback_guard.sh` runs from cron every 5 min (`hermes cron` job `fallback-guard`, delivers to Telegram):
+  starts the router if down, proves gemma with a real completion, is busy-aware (a working model is never
+  "down"), checks `fallback_model` drift. `fallback_warm.sh` (called by the guard) sends gemma Hermes' real
+  Telegram system prompt + tool schemas (the live session's stored prompt with `Model:`/`Provider:` rewritten
+  as Hermes does on failover) so the ~19k-token prefix is already in cache. Both are backed up daily by `backup_hermes.sh`.
+- **Cold vs warm is the whole story on this CPU:** a cold first failover turn re-reads ~19k tokens at 40→11 tok/s
+  = **~30 min**; warm it is **1–2 s**. Three things must hold or it silently goes cold again: router `--timeout 3600`
+  (else cancelled at 600 s), preset `parallel = 1` (with 4 slots the next task evicts the warm prompt into a RAM
+  cache that fails to restore), and nobody restarting the router (the cache lives in the process). See FINDINGS §11.
+- **Don't fire extra identical requests at gemma** — identical prompts don't share in-flight work, they queue and
+  split the 4 cores; killing the client does NOT cancel the server-side prefill. `fallback_warm.sh` refuses to stack.
+- `pkill -f`/`pgrep -f` patterns can match your own shell's command line; use `pgrep -x curl` or `[x]` patterns.
 - Hermes' `fallback_model` (`~/.hermes/config.yaml`) points at gemma on 8080. Change it only
   when asked, with `~/.hermes/scripts/set_fallback_model.py <model> <port>` (it edits just those lines).
   Pre-switch backup: `~/.hermes/config.yaml.2026-09-18-pre-gemma-fallback.bak`.
@@ -28,7 +41,7 @@ Results live in `FINDINGS.md`; the front door is `README.md`.
 ```
 lib/backend.sh           llm_chat / llm_message / llm_tool_calls / candidate plumbing — both API shapes
 lib/scenario_port8080.sh the simulated incident, its scorer, and the shared tool-loop runner
-tests/                   health_check.sh, tokens_per_second.sh (Inky only), bench.sh (any candidate)
+tests/                   health_check.sh, tokens_per_second.sh (Inky only), bench.sh (any candidate), hermes_failover.sh (real Hermes -> gemma)
 exercise/                chat, explore, character, interview, agent_loop, heartbeat
 characters/*.json        character sheets (persona, mood bands, per-band voice examples)
 results/                 raw transcripts from dated runs — cite these from FINDINGS.md

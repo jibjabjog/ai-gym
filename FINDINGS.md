@@ -391,6 +391,47 @@ with `temp = 0.3` to `~/llama-presets.ini` (backup:
 
 ---
 
+## 11. Does the Hermes → gemma failover actually work? (09‑19 → 09‑23)
+
+**Question.** With gemma as Hermes' `fallback_model`, does a failover really happen, how
+long does the first turn take, and what keeps it fast?
+
+**Setup.** Real Hermes (`tests/hermes_failover.sh`): one throwaway one-shot with a bogus
+primary model (`model_not_found` → immediate failover, no retries), live gateway untouched.
+The proof is the one-shot's own socket to gemma. Prompt cost measured from the router
+journal on a 4-core CPU-only box; Hermes' Telegram prompt = ~30k chars of system prompt +
+25 tool schemas = **19,058 tokens**. Raw: `results/2026-09-19-failover-cold-warm.txt`.
+
+**Result.**
+
+| Finding | Number / evidence |
+|---|---|
+| Routing works | Hermes reaches gemma **~5 s** after the primary is rejected |
+| Cold first turn | **29.7 min** for 19,058 tokens; prefill slows 40 → 11 tok/s as context grows (avg 10.7) |
+| Warm turn | **1–2 s** (`19057/19058` tokens from cache), held for 350+ consecutive 5‑min checks |
+| Router default `--timeout` = 600 s | cancelled a 10‑min prefill at exactly 17:21:39 (`should_stop … cancel task`) — **any failover needing >10 min of prefill would die**, whatever Hermes' own timeouts say |
+| 4 slots evict the warm prompt | llama.cpp "saves and clears idle slots on new task"; the saved 19k prompt then **fails to restore** (`failed to find available cells in kv cache`), so the next request re-reads everything |
+| Killing the client doesn't cancel gemma | orphaned prefills keep burning ~150–300% CPU; identical requests don't share work, they split the cores |
+| Platform prompts differ | CLI and Telegram system prompts diverge at char 7,048 and gemma's template puts the system prompt *before* the tools, so a CLI-warmed cache does not help Telegram |
+| Hermes keeps a session's prompt byte-identical | on failover it rewrites only the last `Model:`/`Provider:` lines, so the warm-up sends the live session's stored prompt with those two lines rewritten |
+
+**The fix that held** (three settings, all needed): router unit `--timeout 3600`; preset
+`parallel = 1` in `~/llama-presets.ini` (one slot: the guard's probe and the warm request share
+one cache, nothing to evict into); and no router restarts (the cache lives in the process).
+`fallback_guard.sh` (cron, 5 min) keeps gemma resident and honest; `fallback_warm.sh` keeps
+the Telegram prefix cached.
+
+**A bug of ours.** The first version of the keep-warm ran on the 4-slot default and, from
+09‑19 to 09‑22, redid the whole 19k prefill about every 20 min at ~300% CPU (log: repeating
+`COLD → prefill finished (0/19058 cached)`). It was diagnosed and fixed on 09‑22 (`parallel = 1`).
+Lesson: a cache "keep-warm" must be verified by its *hit rate*, not by the request succeeding.
+
+**Verdict.** Failover routing is proven. With the settings above a warm failover turn is
+seconds; a **cold** one (after a router restart, or a changed prompt) is ~30 min but now
+completes instead of being cancelled. **Still unproven:** a real *Telegram-originated* failover
+(the warm prompt matches the stored session prompt, but conversation history after the tools is
+read fresh each turn), and Hermes' tool-loop quality on gemma (§8–9 used the gym's own harness).
+
 ## Harness bugs found
 
 | Bug | Effect | Fix |
@@ -421,8 +462,9 @@ with `temp = 0.3` to `~/llama-presets.ini` (backup:
 
 ## Open gaps
 
-- **Never tested through Hermes itself or Telegram.** Every result comes from
-  the gym's own harness. The real bar is Hermes' own tool loop and prompts.
+- **Agent quality never tested through Hermes' own tool loop or Telegram.** Failover *routing*
+  and cold/warm latency are now measured through real Hermes (§11), but every agentic-quality
+  result still comes from the gym's own harness.
 - **One scenario.** Every agentic conclusion rests on the port-8080 incident;
   a second, different incident would guard against overfitting.
 - **3 runs per cell** separates signal from noise better than 1, but it's still small.
