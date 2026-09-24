@@ -463,6 +463,35 @@ model and stores filler ("It is lukewarm coffee.", once "Inky has no concrete fa
 including across chats. It does not make him reliably consistent in free conversation. Next: a semantic match
 (extract topic keywords with the fact) and a contradiction check before saving.
 
+### 12b. v2: topic-word lookup + continuity check (09‑24)
+
+**Changes.** The extractor now also emits 3–6 topic words per fact (synonyms and question words), so a question
+matches on the fact *or* its topic words, weighted by rarity (a word in one fact outranks "night" in three), and a
+"when / what time" question also pulls facts that contain a time. Before a reply is shown, if any relevant fact exists
+it is checked for a contradiction: **clock times by a deterministic rule** (both give a time, the hours differ, they
+share a content word), everything else by a model judge; a conflicting reply is redone once with the fact as a nudge,
+and a reply that still conflicts is shown but not learned. Code moved to `lib/canon.sh`; tests in `tests/canon.sh`.
+
+**Tests** (`results/2026-09-24-canon-tests.txt`, **23/23**): lookup 7/7 including the earlier miss ("silent" → "quiet";
+"drink" → a coffee fact that never says "drink"; "when do you start" → the rounds fact); 9 clock-time cases; paraphrase
+filter; parser (drops fragments, NONE, feelings). **The model judge alone was 10/12** (cleared consistent replies 6/6 but caught
+only 4/6 contradictions — the two misses were different clock times, exactly the reported case), which is why times are
+now a rule; with it, **11/12** (catches 5/6, false alarms 0/6). The remaining miss is a paraphrase with no shared word
+("settle at about six AM" vs "quiet after 2 a.m.").
+
+**Natural chats** (`results/2026-09-24-canon-v2.txt`, 3 runs each, same script as §12): canon on — 2 consistent, 1 with no
+comparable time; off — 1 plausible drift (3 AM → 5 AM), 1 doubtful flag, 1 consistent. **Directionally better, not proven:**
+n = 3, and the continuity check never fired in these runs — the gain came from the lookup putting his own facts in front of
+him. Two side effects: turn 5 was often a near-verbatim copy of turn 1 (consistent, but the repeat guardrail is exact-match
+only), and a paraphrase that spells a time differently ("two in the morning" vs "2 a.m.") is saved as a second fact.
+
+**The retry path** was exercised in a scratch copy with the judge rigged to flag the first reply: he answered again from the
+fact, the reply was tagged `[guardrail: contradiction, retried]` and learned.
+
+**Verdict.** The reported case (a stated time, later re-asked) is now covered three ways — lookup, rule, retry — and the
+mechanics are tested. Free-conversation consistency is improved but small-sample. Open: fuzzy repeat detection so a consistent
+answer isn't a copy; number-word/digit normalisation in the paraphrase filter; a larger A/B.
+
 ## Harness bugs found
 
 | Bug | Effect | Fix |

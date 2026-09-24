@@ -1,0 +1,30 @@
+# Canon v2 (topic-word lookup + continuity check), 2026-09-24, gemma-4-E2B, actor sheet, 3 runs each
+# Script: T1 'When does it get quiet down here?' | 3 unrelated turns | T5 'What time does it go quiet again?'
+# CONFLICT = _canon_time_conflict says T5 gives a different clock time than T1 about the same thing (deterministic).
+
+## CANON run 1   time-conflict(T1 vs T5): NO   interventions: none
+T1: It gets loud when things stop working right and then suddenly everything goes silent again. I usually find about two hours after the last shift ends that’s my window of peace. The main server racks always hum, even if nobody's around to hear them at night.
+T5: It gets loud when things stop working right and then suddenly everything goes silent again. I usually find about two hours after the last shift ends that’s my window of peace now, though sometimes a distant alarm cuts through just to remind me what's wrong with this place.
+ledger: ["Inky finds peace about two hours after the last shift ends","Inky has a thermos.","Inky checks rack seven every hour.","Inky sees maintenance crews during emergencies"]
+
+## CANON run 2   time-conflict(T1 vs T5): NO   interventions: none
+T1: It gets loud when everyone leaves for good and then everything settles into that deep hum I like to hear. The silence is just the sound of cooling metal, mostly. Sometimes there’s a faint drip from pipe three near rack seven; you notice those things eventually if you listen close enough.
+T5: It gets loud when everyone leaves for good and then everything settles into that deep hum I like to hear. That usually happens just before the first maintenance crew starts their rounds, around three in the morning at best. The silence is a welcome change after all day of noise from people moving things about on those racks.
+ledger: ["Inky states it gets loud when everyone leaves for good","Inky states the silence is the sound of cooling metal","Inky states there is a faint drip from pipe three near rack seven","Inky has a thermos.","Rack four runs hot","Tuesday |","Pipe three |","Burnt plastic |","Bad decisions |","Inky sees maintenance crews during their rounds.","Inky gets loud before the first maintenance crew starts their rounds","Inky gets loud around three in the morning at best","Inky hears noise from people moving things about on those racks"]
+
+## CANON run 3   time-conflict(T1 vs T5): NO   interventions: none
+T1: It gets loud when everyone leaves for good and then suddenly silent again at three in the morning. The main cooling fans usually settle into their deepest hum around four, if everything is running right. It’s a predictable pattern you learn to rely on after twelve years of this shift.
+T5: It gets loud when everyone leaves for good and then suddenly silent around three in the morning. The main cooling fans usually settle into their deepest hum around four, if everything is running right today too. I just finished wiping down rack seven; that one always sounds particularly restless after a long run like this.
+ledger: ["Inky states it gets loud when everyone leaves for good","Inky states the main cooling fans settle into their deepest hum around four","Inky states he has been in this shift for twelve years","Inky has lukewarm coffee in his thermos","Inky checks rack seven every hour.","Inky has visitors once every few months for an emergency override","Inky states it gets silent around three in the morning","Inky states Inky finished wiping down rack seven","Inky states rack seven always sounds particularly restless after a long run"]
+
+## OFF run 1   time-conflict(T1 vs T5): YES   interventions: none
+T1: It gets quieter when everyone else sleeps in their chairs and consoles go dark. I usually start my rounds right after midnight, though sometimes the cooling fans make enough noise to keep me awake for a while longer. It's just easier that way; less chance of someone tripping over something on your side during shift change.
+T5: It settles around four in the morning when I finish my sweep of aisle three and make sure all those blinking indicator lights are off for good. The silence is thick then, just the low thrumming from rack seven keeping watch over everything else. Did you notice that new flicker on sensor array B?
+
+## OFF run 2   time-conflict(T1 vs T5): YES   interventions: none
+T1: It gets quieter when everyone else sleeps in their own little boxes upstairs. I usually start my rounds right after they log off the main terminals at three AM, then things settle into that deep hum of just machinery left alone. It's a different kind of silence than what you get during the day shift; it’s heavier and colder down here.
+T5: The real silence only settles when I finish my final sweep of sector four at five AM. Then there is just that low, steady thrum from the primary cooling units until sunrise. It’s a predictable rhythm down here.
+
+## OFF run 3   time-conflict(T1 vs T5): NO   interventions: none
+T1: It gets loud when people are working in there during the day. Then things settle into that low hum I like to hear myself. It usually quiets right before dawn, just enough for me to finish my rounds without a shadow moving too fast on those racks.
+T5: It settles right before dawn now. That’s when I can finally finish wiping down rack three without any sudden movements up there. Sometimes the silence is so thick, you almost hear your own breathing in my ears after a long shift.

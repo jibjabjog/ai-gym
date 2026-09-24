@@ -50,7 +50,7 @@ Scripts skip unreachable candidates with a hint.
 
 `inky` (the actor sheet) keeps a **canon**: after each reply, the concrete facts he just stated ("it gets quiet
 after 2 a.m.") are saved to `~/.local/share/inky/canon-inky.json`, survive between chats, and are put in front of him
-— all of them, plus the ones relevant to the question — so he looks them up before improvising. In chat:
+— all of them, plus the ones relevant to the question (matched on topic words, so "silent" finds "quiet", and "what time" finds facts with a time) — so he looks them up before improvising. A reply that contradicts a relevant fact is redone once (clock times are checked by rule, the rest by a model judge) and never saved. In chat:
 `/canon` lists them, `/forget` wipes them. Details and limits: FINDINGS §12.
 
 ### Is the fallback actually ready?
@@ -67,6 +67,7 @@ warm with Hermes' real Telegram prompt: a failover turn costs **~1–2 s warm, ~
 | `tests/health_check.sh` | Inky's systemd unit, `/health`, `/v1/models` |
 | `tests/tokens_per_second.sh` | quick single-shot tok/s for Inky |
 | `tests/bench.sh` | controlled speed benchmark across candidates (warmup + N identical runs) |
+| `tests/canon.sh` | unit tests for the fact ledger (`lib/canon.sh`): topic-word lookup, the clock-time rule, the paraphrase filter, the parser (all offline) + the judge's accuracy and the extractor (need the model). `OFFLINE=1` for the first group |
 | `tests/hermes_failover.sh` | **real Hermes**: forces one throwaway session (bogus primary model) to fail over to gemma. `QUICK` (default, ~5 s) passes once Hermes' own socket reaches the fallback; `FULL=1` waits for the reply. Refuses to run while gemma is busy; live gateway untouched |
 | `exercise/chat.sh` | plain chat, interactive or one-shot |
 | `exercise/explore.sh` | a llama.cpp server's spec: context, slots, template capabilities, sampling |
@@ -99,7 +100,7 @@ CANDIDATES="Spark 4B|ollama|127.0.0.1|11434|SparkLLM/Spark-X2.5-4B" exercise/int
 | `INKY_CHARACTER` | `characters/inky-janitor.json` | character |
 | `INKY_MEMORY_MAX` / `INKY_MEMORY_SHOWN` | 12 / 6 | character — rolling memory kept / lines shown in the brief |
 | `INKY_CANON` | sheet's `"canon"` flag | character — `off`, or a file path; default `~/.local/share/inky/canon-<name>.json` |
-| `INKY_CANON_MAX` / `INKY_CANON_DEBUG` / `INKY_CANON_REMIND` | 60 / 0 / 0 | character — facts kept / print what is learned / also remind in the user turn |
+| `INKY_CANON_MAX` / `INKY_CANON_DEBUG` / `INKY_CANON_CHECK` / `INKY_CANON_REMIND` | 60 / 0 / 1 / 0 | character — facts kept / print what is learned / continuity check on / also remind in the user turn |
 | `INKY_MOOD_TYPE` / `INKY_MOOD_SETTING` | sheet's start | character — jump to a band / exact value |
 | `INKY_MOOD_LOCK` / `INKY_MOOD_DEBUG` | `0` | character — freeze mood / print it each turn |
 | `INKY_RUNS` / `INKY_MAX_STEPS` | 1 / 8 (loop), 6 (heartbeat) | agent_loop, heartbeat |

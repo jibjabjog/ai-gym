@@ -41,7 +41,8 @@ Results live in `FINDINGS.md`; the front door is `README.md`.
 ```
 lib/backend.sh           llm_chat / llm_message / llm_tool_calls / candidate plumbing — both API shapes
 lib/scenario_port8080.sh the simulated incident, its scorer, and the shared tool-loop runner
-tests/                   health_check.sh, tokens_per_second.sh (Inky only), bench.sh (any candidate), hermes_failover.sh (real Hermes -> gemma)
+lib/canon.sh            a character's persistent fact ledger: lookup, extract, dedupe, contradiction check (FINDINGS §12)
+tests/                   health_check.sh, tokens_per_second.sh (Inky only), bench.sh (any candidate), hermes_failover.sh (real Hermes -> gemma), canon.sh (ledger unit tests)
 exercise/                chat, explore, character, interview, agent_loop, heartbeat
 characters/*.json        character sheets (persona, mood bands, per-band voice examples)
 results/                 raw transcripts from dated runs — cite these from FINDINGS.md
