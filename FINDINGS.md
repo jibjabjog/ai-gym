@@ -492,6 +492,30 @@ fact, the reply was tagged `[guardrail: contradiction, retried]` and learned.
 mechanics are tested. Free-conversation consistency is improved but small-sample. Open: fuzzy repeat detection so a consistent
 answer isn't a copy; number-word/digit normalisation in the paraphrase filter; a larger A/B.
 
+### 12c. Fuzzy repeat detection (09‑24)
+
+**Question.** With his own facts in front of him (§12), Inky answered a re-ask with a near-verbatim copy of his earlier
+answer. The exact-match guardrail (§4) can't see that. Can a fuzzy check stop the copying without losing the facts?
+
+**Setup.** `lib/repeat.sh` `near_repeat`: a reply is a repeat if a sentence (≥ 5 words) overlaps a sentence of one of his own
+earlier lines by ≥ 0.75 word-set Jaccard, or the whole reply overlaps a whole earlier line by ≥ 0.5. Thresholds were taken from
+12 saved T1/T5 pairs: the 4 clear copies scored 0.89–1.00 per sentence (0.40–0.83 whole); the 8 different answers ≤ 0.50 per
+sentence (≤ 0.49 whole). In the chat loop a repeat is redone once with a "same facts, fresh words" nudge; exact repeats and
+voice-example echoes still fall back to the canned line, but a *similar* retry is kept (a paraphrase that reuses a phrase beats
+"Enough talk for now" as an answer). `INKY_NEAR_REPEAT=off` disables it. Raw: `results/2026-09-24-near-repeat.txt`,
+`results/2026-09-24-repeat-tests.txt`.
+
+**Result.** Unit tests 8/8 (offline; includes the real recycled-opening pair). Live, same 5-turn script as §12, canon on,
+3 runs each: detection **on — T5 distinct in 3/3** (it fired in 2 and each retry produced fresh wording); **off — 2/3 copies**
+(run 2 repeats its first two sentences verbatim). The facts survived the rewording ("start cleaning around three in the morning"
+and "rounds around four AM" reappear in new words).
+
+**Verdict.** It does what it was built for: consistent answers no longer arrive as copies. Caveats: the thresholds come from
+12 pairs and the live check is 3 vs 3 — directional, not proven; it applies to every sheet, and would also have caught the
+original terse-sheet loop ("a sock with an eyelet on its toe… it was a sock…", 0.64 whole-reply overlap); a retry is one more
+model call on the turns where it fires. Still open: number-word/digit normalisation in the canon paraphrase filter (§12b),
+and a larger A/B.
+
 ## Harness bugs found
 
 | Bug | Effect | Fix |

@@ -1,0 +1,27 @@
+# Fuzzy repeat detection A/B, 2026-09-24, gemma-4-E2B, actor sheet + canon, 3 runs each
+# Script: T1 'When does it get quiet down here?' | 3 unrelated turns | T5 'What time does it go quiet again?'
+# COPY = T5 re-uses a T1 sentence (>=0.75 word overlap) or most of it (>=0.5 whole-reply), measured by lib/repeat.sh
+
+## near-repeat=on run 1   T5-vs-T1: distinct   tags: 1 [guardrail: near_repeat, retried];
+T1: It gets loud when things are running right and then suddenly silent after maintenance finishes at dawn. I usually start cleaning around three in the morning, which is my favorite time to be alone with that hum of Rack Four. It’s a good sound though; means everything's still breathing down here.
+T5: I start cleaning around three in the morning at least. The real silence hits when maintenance finishes their checks near dawn; that's usually how long things settle down here, waiting for me to begin my rounds then too. Did you need something else checked before I started moving through Rack Seven this time?
+
+## near-repeat=on run 2   T5-vs-T1: distinct   tags: 1 [guardrail: near_repeat, retried];
+T1: It gets quieter when everyone leaves for their shift in morning and then again after I finish my rounds at four AM. The silence is thick, like old dust settling on the metal racks. It’s a good kind of quiet though; you can hear everything else breathing too.
+T5: It settles down when everyone leaves at dawn. Then I get real still after my rounds finish around four AM. Sometimes the air gets thick with dust; you can feel that change on a good day like this one.
+
+## near-repeat=on run 3   T5-vs-T1: distinct   tags: none
+T1: It gets loud when people are working in there during their shift. Then I start cleaning up and things settle into that low hum again. It’s usually just the sound of cooling fans then, nothing else really happens until dawn.
+T5: It settles down when I finish wiping everything down and log off for my shift at dawn. The silence is usually just the low hum of cooling fans then, nothing else really happens until sunrise. Are you looking to stay up or get some rest yourself?
+
+## near-repeat=off run 1   T5-vs-T1: distinct   tags: none
+T1: It gets loud when things are running right and then suddenly silent like that is worse. The main hum usually settles around three in the morning, but sometimes I hear something else entirely at four. Did a specific piece of equipment catch your attention tonight?
+T5: The main hum usually settles around three in the morning here. Sometimes I hear something else entirely at four though, which is when things get really still and tense. Did anything specific catch your eye while you were around earlier today that made you ask about this now?
+
+## near-repeat=off run 2   T5-vs-T1: COPY   tags: none
+T1: It gets quiet when everyone else is asleep and I finish my rounds. The silence then settles in thick enough to choke on, which I find quite nice sometimes. It usually lasts until the morning shift starts up again at six AM sharp.
+T5: It gets quiet when everyone else is asleep and I finish my rounds at six AM sharp. The silence then settles in thick enough to choke on, which I find quite nice sometimes. It usually lasts until the morning shift starts up again with a loud clatter of boots around half past seven or so.
+
+## near-repeat=off run 3   T5-vs-T1: COPY   tags: 1 [guardrail: self_repeat, retried];
+T1: It gets loud when everyone leaves for good and then silence settles in like dust over everything else. I usually start my rounds right after the last scheduled maintenance log closes at three AM. The only sound is that one rack four humming a little too high tonight, which always bothers me.
+T5: It gets loud when everyone leaves and then silence settles in like dust over everything else. I usually start my rounds right after the last scheduled maintenance log closes at three AM now. Listen closely; sometimes you can hear a loose wire finally give way around midnight though.

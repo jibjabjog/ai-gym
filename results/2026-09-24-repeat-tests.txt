@@ -1,0 +1,37 @@
+# tests/repeat.sh and tests/canon.sh (offline), 2026-09-24, after adding lib/repeat.sh
+  ok   recycled opening sentence + new tail (real T5)
+  ok   identical reply
+  ok   same facts, fresh words
+  ok   different answer, same topic (real OFF pair)
+  ok   short lines are not judged (under 5 words)
+  ok   no earlier lines
+  ok   one earlier line among many
+  ok   shared stock words only
+
+8 passed, 0 failed
+
+== A. canon_relevant (offline) ==
+  ok   "What time does it go quiet?" -> It gets quiet after 2 a.m.
+  ok   "Is it ever silent down here?" -> It gets quiet after 2 a.m.
+  ok   "What do you drink at night?" -> Inky keeps lukewarm coffee in his thermos.
+  ok   "Tell me about that robot." -> A drone got stuck on rack seven once.
+  ok   "When do you start work?" -> Inky starts his rounds at three AM sharp.
+  ok   "What is your favourite colour?" -> (nothing)
+  ok   "How many mops do you own?" -> (nothing)
+== A3. _canon_time_conflict (offline, deterministic) ==
+  ok   YES: "It gets quiet after 2 a.m." vs "It goes quiet around four in the morning."
+  ok   NO: "It gets quiet after 2 a.m." vs "It gets quiet after two in the morning, mostly."
+  ok   NO: "It gets quiet after 2 a.m." vs "Quiet after 2 a.m., like I said."
+  ok   NO: "It gets quiet after 2 a.m." vs "The fans hum all night, that is how it is."
+  ok   YES: "Inky starts his rounds at three AM sharp." vs "I start my rounds at midnight."
+  ok   NO: "Inky starts his rounds at three AM sharp." vs "Three AM, sharp, same as always."
+  ok   YES: "Inky starts his rounds at three AM sharp." vs "Rounds? Six in the evening, before anyone clocks on."
+  ok   NO: "Inky starts his rounds at three AM sharp." vs "It gets quiet after 2 a.m."
+  ok   NO: "Inky has lukewarm coffee in his thermos." vs "The coffee is cold by two in the morning."
+== A4. _canon_parse (offline): keeps facts, drops fragments / NONE / feelings ==
+  ok   7 lines -> 2 facts
+  ok   topic words parsed
+== A2. near-duplicate filter (through canon_learn's merge rule, offline) ==
+  ok   3 candidates -> 2 kept (the paraphrase dropped)
+
+offline only: 19 passed, 0 failed

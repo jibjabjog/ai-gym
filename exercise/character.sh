@@ -136,6 +136,7 @@ adjust_mood_from_text() {
 #   INKY_CANON=off|<path>   INKY_CANON_MAX=60   INKY_CANON_DEBUG=1   INKY_CANON_CHECK=0 (skip the judge)
 #   in chat: /canon lists the facts, /forget wipes them
 source "${SCRIPT_DIR}/../lib/canon.sh"
+source "${SCRIPT_DIR}/../lib/repeat.sh"   # near_repeat: fuzzy self-repeat detection (INKY_NEAR_REPEAT=off disables)
 canon_init "${sheet}"
 
 # JSON array of "speaker: line" strings, oldest first, capped at MAX_MEMORY.
@@ -225,6 +226,7 @@ print_reply()   { llm_display "${char_name}" "${BACKEND}" "$1"; }
 # the-orb's scene-specific checks (bland dismissal, room description) not ported.
 
 REPEAT_NUDGE=$'\n\n# Note\nYour last instinct was to repeat something you already said, word for word — resist it. React fresh to what they just said, even if the sentiment ends up similar.'
+NEAR_REPEAT_NUDGE=$'\n\n# Note\nYour last instinct reused a sentence you already said, almost word for word. Keep the facts you have established, but say it in fresh words — a new angle or a new detail — and do not reuse your earlier phrasing.'
 VOICE_EXAMPLE_NUDGE=$'\n\n# Note\nYour last instinct was to answer with the exact words from the voice examples above — resist it. Those show your voice, not your actual line. Say something different that still sounds like you.'
 
 own_lines_json() {
@@ -255,6 +257,12 @@ classify_failure() {
           else "" end
     '
 }
+# ...and, if those pass, "near_repeat" when it re-uses a sentence (or most of a reply) it already said.
+classify_failure_full() {
+    local f; f="$(classify_failure "$1")"
+    if [[ -z "${f}" && "${INKY_NEAR_REPEAT:-on}" != "off" && "$(near_repeat "$1" "$(own_lines_json)")" == "1" ]]; then f="near_repeat"; fi
+    echo "${f}"
+}
 
 # Must be first-person dialogue: third-person narration ("Inky just keeps
 # working…") is itself a persona violation (FINDINGS.md §4).
@@ -284,23 +292,27 @@ ask_and_record() {
     response="$(send "${brief}" "${utter}" "default")"
     content="$(reply_content "${response}")"
     failure=""
-    [[ -n "${content}" ]] && failure="$(classify_failure "${content}")"
+    [[ -n "${content}" ]] && failure="$(classify_failure_full "${content}")"
 
     if [[ -n "${failure}" ]]; then
         local nudge retry_failure
-        if [[ "${failure}" == "voice_example" ]]; then
-            nudge="${VOICE_EXAMPLE_NUDGE}"
-        else
-            nudge="${REPEAT_NUDGE}"
-        fi
+        case "${failure}" in
+            voice_example) nudge="${VOICE_EXAMPLE_NUDGE}" ;;
+            near_repeat)   nudge="${NEAR_REPEAT_NUDGE}" ;;
+            *)             nudge="${REPEAT_NUDGE}" ;;
+        esac
         response="$(send "${brief}${nudge}" "${utter}" "retry")"
         content="$(reply_content "${response}")"
         retry_failure=""
-        [[ -n "${content}" ]] && retry_failure="$(classify_failure "${content}")"
+        [[ -n "${content}" ]] && retry_failure="$(classify_failure_full "${content}")"
 
-        if [[ -n "${retry_failure}" || -z "${content}" ]]; then
+        # Exact repeats and voice-example echoes still fall back to the canned line. A merely *similar*
+        # retry is kept: a paraphrase that reuses a phrase beats "Enough talk for now" as an answer.
+        if [[ -z "${content}" || "${retry_failure}" == "self_repeat" || "${retry_failure}" == "voice_example" ]]; then
             content="$(fallback_line)"
             note=" [guardrail: ${failure}, fallback]"
+        elif [[ "${retry_failure}" == "near_repeat" ]]; then
+            note=" [guardrail: ${failure}, retried, still similar]"
         else
             note=" [guardrail: ${failure}, retried]"
         fi
