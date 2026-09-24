@@ -2,7 +2,7 @@
 # Wear a character sheet: persona, drives, mood dial and a short rolling
 # memory, rebuilt into a fresh system "brief" every turn. A bash/jq port of
 # ../the-orb's Character Engine (brief.py, guard.py, character.py, guardrail.py).
-# Not ported: the-orb's fact-extraction ledger. Findings: FINDINGS.md §1, §3, §4.
+# Ported (opt-in per sheet, "canon": true): a fact ledger — see "Canon" below. Findings: FINDINGS.md §1, §3, §4.
 #   exercise/character.sh                  # interactive
 #   exercise/character.sh "one-shot prompt"
 set -uo pipefail
@@ -17,8 +17,8 @@ CHARACTER_SHEET="${INKY_CHARACTER:-${SCRIPT_DIR}/../characters/inky-janitor.json
 export LLM_MAX_TOKENS="${INKY_MAX_TOKENS:-512}" LLM_THINKING="${INKY_THINKING:-0}"
 
 # the-orb's tuned values: a wider window made small models MORE repetitive.
-MAX_MEMORY=12
-SHOWN_MEMORY=6
+MAX_MEMORY="${INKY_MEMORY_MAX:-12}"
+SHOWN_MEMORY="${INKY_MEMORY_SHOWN:-6}"
 
 if [[ ! -f "${CHARACTER_SHEET}" ]]; then
     echo "FAIL: character sheet not found: ${CHARACTER_SHEET}" >&2
@@ -129,6 +129,77 @@ adjust_mood_from_text() {
     (( mood_value > mood_ceiling )) && mood_value=${mood_ceiling}
 }
 
+# --- Canon: facts the character has stated, kept across chats ---------------
+# A rolling memory forgets ("it goes quiet after 2 a.m." falls out of the window and
+# the next answer to "what time?" is invented afresh). So after every reply a second,
+# cheap call extracts the concrete facts just stated, and they are saved to a file.
+# Every brief then carries (a) all canon and (b) the lines relevant to THIS question,
+# so the character looks it up before improvising. Old canon wins; new facts are added.
+#   INKY_CANON=off|<path>   disable / choose the file (default ~/.local/share/inky/canon-<name>.json)
+#   INKY_CANON_MAX=60       facts kept (oldest dropped)      INKY_CANON_DEBUG=1  show what is learned
+#   in chat: /canon lists the facts, /forget wipes them
+CANON_ON=0
+if [[ "${INKY_CANON:-}" != "off" ]] && { [[ -n "${INKY_CANON:-}" ]] || [[ "$(echo "${sheet}" | jq -r '.canon // false')" == "true" ]]; }; then
+    CANON_ON=1
+fi
+CANON_FILE="${INKY_CANON:-${HOME}/.local/share/inky/canon-${char_name,,}.json}"
+CANON_MAX="${INKY_CANON_MAX:-60}"
+canon="[]"
+if (( CANON_ON )) && [[ -f "${CANON_FILE}" ]]; then
+    canon="$(jq -c 'if type == "array" then map(select(type == "string")) else [] end' "${CANON_FILE}" 2>/dev/null || echo '[]')"
+fi
+
+canon_save() {
+    (( CANON_ON )) || return 0
+    mkdir -p "$(dirname "${CANON_FILE}")" && echo "${canon}" | jq . > "${CANON_FILE}"
+}
+
+# The canon lines that share a content word with the question (matched on a 5-letter
+# stem, so "quiet"/"quieter" meet). At most 3, best first.
+canon_relevant() {
+    (( CANON_ON )) || { echo "[]"; return; }
+    jq -n -c --arg q "$1" --argjson canon "${canon}" '
+        def stems: ascii_downcase | gsub("[^a-z0-9 ]"; " ") | split(" ")
+            | map(select(length >= 4)) | map(select(. as $w
+                | ["what","does","that","this","with","have","when","where","which","there","them","then",
+                   "they","your","about","were","been","tell","more","would","could","should","from","into",
+                   "some","just","like","really","much","many","very","also","again","happened","next"]
+                | index($w) | not)) | map(.[0:5]);
+        ($q | stems) as $qs
+        | [ $canon[] | . as $f | {f: $f, n: ([($f | stems)[] | select(. as $s | $qs | index($s))] | length)} | select(.n > 0) ]
+        | sort_by(-.n) | .[0:3] | map(.f)'
+}
+
+# Extract the new concrete facts from one exchange; merge into canon (dedupe, cap).
+canon_learn() {
+    (( CANON_ON )) || return 0
+    local q="$1" reply="$2" sys msgs resp text new added
+    sys="You keep the continuity notes for a character called ${char_name}. Read the exchange and list the concrete facts ${char_name} just stated about himself or his world: times, places, names, numbers, objects, events, habits. Only hard specifics someone could later contradict — skip atmosphere, general remarks, sounds and moods. One fact per line, short, plain, third person (for example: It gets quiet after 2 a.m.  /  ${char_name} checks rack seven every hour.). Only what ${char_name} actually said in his reply. No feelings, opinions or questions. If there is nothing concrete, write NONE."
+    msgs="$(jq -n --arg s "${sys}" --arg u "Player: ${q}"$'\n'"${char_name}: ${reply}" \
+        '[{role: "system", content: $s}, {role: "user", content: $u}]')"
+    local LLM_TEMPERATURE=0 LLM_REPEAT_PENALTY=1.0 LLM_MAX_TOKENS=120
+    resp="$(llm_chat "${BACKEND}" "${BASE_URL}" "${MODEL_NAME}" "${msgs}")"
+    text="$(reply_content "${resp}")"
+    [[ -z "${text}" ]] && return 0
+    new="$(printf '%s\n' "${text}" | jq -R -s -c '
+        split("\n") | map(sub("^\\s*([-*•]|[0-9]+[.)])\\s*"; "") | sub("\\s+$"; ""))
+        | map(select(length > 3 and length <= 160
+            and (test("^none\\.?$"; "i") | not)
+            and (test("no (concrete|new|specific|hard) fact|nothing concrete|not stated|no facts"; "i") | not)))')"
+    added="$(jq -n -c --argjson old "${canon}" --argjson new "${new}" --argjson cap "${CANON_MAX}" '
+        def norm: ascii_downcase | gsub("[^a-z0-9 ]"; "") | gsub("\\s+"; " ");
+        def ws: norm | split(" ") | map(select(length > 2)) | unique;
+        def similar($a; $b): ($a | ws) as $x | ($b | ws) as $y
+            | (($x - ($x - $y)) | length) as $i | (($x + $y) | unique | length) as $u
+            | $u > 0 and ($i / $u) >= 0.6;
+        reduce $new[] as $f ($old; if any(.[]; similar(.; $f)) then . else . + [$f] end) | .[-$cap:]')"
+    if [[ "${INKY_CANON_DEBUG:-0}" == "1" ]]; then
+        echo "  [canon +$(jq -n --argjson a "${added}" --argjson o "${canon}" '($a | length) - ($o | length)'): $(echo "${new}" | jq -r 'join(" | ")')]"
+    fi
+    canon="${added}"
+    canon_save
+}
+
 # JSON array of "speaker: line" strings, oldest first, capped at MAX_MEMORY.
 memory="[]"
 
@@ -146,6 +217,7 @@ build_brief() {
     directive="$(mood_directive "${band}")"
     echo "${sheet}" | jq -r \
         --argjson memory "${memory}" --argjson shown "${SHOWN_MEMORY}" \
+        --argjson canon "${canon}" --argjson relevant "$(canon_relevant "${CURRENT_Q:-}")" \
         --arg band "${band}" --arg directive "${directive}" '
         . as $sheet
         | ($sheet.persona | gsub("\\{name\\}"; $sheet.name)) as $persona
@@ -164,12 +236,20 @@ build_brief() {
             "(This is why you are how you are — background, never something you'\''d recite out loud.)",
             ("- " + .backstory)
           ]
+          + (if ($canon | length) > 0 then
+                ["", "# Facts you have already established (things you have actually said — stay consistent, never contradict them; if asked about one of these, answer from it; anything NOT listed you may still invent, then it becomes fact)"]
+                + ($canon | map("- " + .))
+              else [] end)
           + (
               ($memory[-$shown:]) as $recent
               | if ($recent | length) > 0 then
                   ["", "# What'\''s been said so far"] + ($recent | map("- " + .))
                 else [] end
             )
+          + (if ($relevant | length) > 0 then
+                ["", "# You have ALREADY said this, relevant to what they just asked — answer consistently with it, do not change it"]
+                + ($relevant | map("- " + .))
+              else [] end)
           + [
               "",
               "# Your mood right now — this overrides your general nature above if they ever conflict",
@@ -251,11 +331,19 @@ ask_and_record() {
     local user_line="$1"
     local brief response content failure note=""
 
+    CURRENT_Q="${user_line}"
     adjust_mood_from_text "${user_line}"
     remember "player" "${user_line}"
 
     brief="$(build_brief)"
-    response="$(send "${brief}" "${user_line}" "default")"
+    # INKY_CANON_REMIND=1 (off by default; no measurable gain in §12): also put the relevant established facts in the user turn,
+    # where a small model pays most attention (system-prompt canon alone can be overlooked).
+    local utter="${user_line}" rel
+    if (( CANON_ON )) && [[ "${INKY_CANON_REMIND:-0}" == "1" ]]; then
+        rel="$(canon_relevant "${user_line}" | jq -r 'join(" ")')"
+        [[ -n "${rel}" ]] && utter="${user_line}"$'\n\n'"(You already told them: ${rel} Stay consistent with that.)"
+    fi
+    response="$(send "${brief}" "${utter}" "default")"
     content="$(reply_content "${response}")"
     failure=""
     [[ -n "${content}" ]] && failure="$(classify_failure "${content}")"
@@ -267,7 +355,7 @@ ask_and_record() {
         else
             nudge="${REPEAT_NUDGE}"
         fi
-        response="$(send "${brief}${nudge}" "${user_line}" "retry")"
+        response="$(send "${brief}${nudge}" "${utter}" "retry")"
         content="$(reply_content "${response}")"
         retry_failure=""
         [[ -n "${content}" ]] && retry_failure="$(classify_failure "${content}")"
@@ -288,6 +376,8 @@ ask_and_record() {
     [[ "${MOOD_DEBUG}" == "1" ]] && echo "  [mood: ${mood_value} ($(current_band))]"
 
     [[ -n "${content}" ]] && remember "${char_name,,}" "${content}"
+    # Learn from what he really said — not from the guardrail's canned fallback line.
+    [[ -n "${content}" && "${note}" != *fallback* ]] && canon_learn "${user_line}" "${content}"
 }
 
 if [[ $# -gt 0 ]]; then
@@ -297,11 +387,16 @@ if [[ $# -gt 0 ]]; then
 fi
 
 # Interactive mode.
-echo "Talking with ${char_name} at ${BASE_URL} (sheet: ${CHARACTER_SHEET}; type 'exit' or Ctrl-D to quit)"
+echo "Talking with ${char_name} at ${BASE_URL} (sheet: ${CHARACTER_SHEET}; type 'exit' or Ctrl-D to quit$( ((CANON_ON)) && echo "; /canon lists what ${char_name} has established, /forget wipes it"))"
 while true; do
     read -r -p "you> " line || { echo; break; }
     [[ -z "${line}" ]] && continue
     [[ "${line}" == "exit" || "${line}" == "quit" ]] && break
+    if [[ "${line}" == "/canon" ]]; then
+        if (( CANON_ON )); then echo "${canon}" | jq -r 'if length == 0 then "(nothing established yet)" else map("- " + .)[] end'; else echo "(canon is off for this sheet)"; fi
+        continue
+    fi
+    if [[ "${line}" == "/forget" ]]; then canon="[]"; (( CANON_ON )) && rm -f "${CANON_FILE}"; echo "(canon wiped)"; continue; fi
 
     ask_and_record "${line}"
 done

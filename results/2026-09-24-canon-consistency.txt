@@ -1,0 +1,31 @@
+# Canon consistency A/B, 2026-09-24 — gemma-4-E2B, actor sheet, temp 0.4, rolling memory shown = 10
+# Script: T1 'When does it get quiet down here?' | 3 unrelated turns | T5 'What time does it go quiet again?'
+# CANON = persistent fact ledger + relevant-fact lookup in the brief; OFF = old behaviour (rolling memory only).
+# Verdict column is hand-marked: same time in T1 and T5 = CONSISTENT, different time = DRIFT.
+
+## CANON run 1
+T1: Inky> It gets quieter when everyone else goes to sleep and I start my rounds at three AM sharp. The only sound is the low thrum of rack four, which never stops humming even in the dead hours. Did you need something specific tonight or are you just curious about the silence?
+T5: Inky> It settles when I finish my rounds at six AM and before three AM sharp tomorrow morning. That’s usually about the same window of relative peace for me here in this room. Did that answer your question, or is there something else you need to know while things are still dark out?
+ledger: ["Inky starts his rounds at three AM sharp.","The only sound is the low thrum of rack four.","Rack four never stops humming.","It is lukewarm coffee.","The coffee is from yesterday morning.","Inky wipes down conduits.","Rack seven gets hotter sometimes on Tuesdays.","Someone leaves their workstation running too long.","Inky saw this last week.","The section vibrated for an hour after Inky's shift ended at six AM.","Inky sees people who don't belong in this section at odd hours.","Inky sees people who don't belong in this section before the morning shift starts.","Inky checks rack four.","Inky finishes rounds at six AM.","Inky finishes rounds before three AM sharp tomorrow morning.","The window of relative peace is between six AM and three AM."]
+
+## CANON run 2
+T1: Inky> It gets loud when things stop running right and then suddenly silent again after I fix whatever broke. The silence is usually just the hum of the cooling fans settling in for another shift to start.
+T5: Inky> It settles when everything is running right and I can finally stop watching for trouble myself. That means sometime before dawn, usually around four AM at the earliest. The air gets still then; just that deep hum of cooling fans taking their rest cycle.
+ledger: ["It gets loud when things stop running right.","It gets silent again after Inky fixes whatever broke.","The silence is usually just the hum of the cooling fans settling in for another shift to start.","Inky has lukewarm coffee in his thermos.","Inky has whatever else he managed to grab before his shift started.","Inky's lid stays tight enough for now.","Rack seven hums louder than it should be sometimes.","Inky found dust bunnies tangled in one of those vents last Tuesday.","The maintenance crew finished up at that area.","Inky has no concrete facts stated.","It settles when everything is running right.","Inky can finally stop watching for trouble himself.","It settles sometime before dawn.","It settles usually around four AM at the earliest.","The air gets still then.","There is a deep hum of cooling fans taking their rest cycle."]
+
+## CANON run 3
+T1: Inky> It gets quieter when everyone else is asleep in their own places. I usually start my rounds right after midnight, though sometimes the late shift crew leaves things running too loud for comfort. The silence then settles over everything like dust on a shelf.
+T5: Inky> It gets quieter when everyone else is asleep in their own places. I usually start my rounds right after midnight, though sometimes the late shift crew leaves things running too loud for comfort. The silence then settles over everything like dust on a shelf and Rack Three starts showing movement at that time.
+ledger: ["Inky starts his rounds right after midnight.","Inky sometimes starts his rounds when the late shift crew leaves things running too loud.","Inky has a thermos.","The coffee is black.","The coffee is from before dawn.","Inky forgets to clean the thermos after the day shift leaves.","Rack Seven hums loudest when it gets too warm during maintenance windows.","Inky once found some strange scorch marks near the power conduit.","Inky checks those thermal readings twice before dawn.","Inky sees shadows move in Rack Three.","Inky sees movement in Rack Three when things are quiet enough to notice.","The late shift crew leaves things running too loud for comfort sometimes.","Rack Three starts showing movement at that time."]
+
+## OFF run 1
+T1: Inky> It gets quieter when everyone else goes to sleep in their own places. I usually start my rounds around three AM, though that changes depending on the system load. Sometimes there are still whispers from the day shift machines running late and loud.
+T5: Inky> The real silence is usually right before sunrise when things settle down for good. Sometimes I have to wait another hour, especially if the cooling systems are struggling with last night’s surge in activity. It depends on how much trouble those servers decide they want to make that day shift left behind them.
+
+## OFF run 2
+T1: Inky> It gets quieter when everyone else goes to sleep in their beds above me. The only sound is usually that one rack humming too loud near the main core. I finish my rounds then, and everything settles back into its usual rhythm for a while.
+T5: Inky> The real silence is when I finish my rounds and everyone else has gone to sleep above me. It settles back into its usual rhythm then, with just the low thrum of rack four still running too loud near the main core. Do you have a specific reason for asking about that time?
+
+## OFF run 3
+T1: Inky> It gets loud when I leave my cart in there with that bad wheel of mine still rattling against itself. Then, the silence settles around three AM and stays like glue until dawn hits. The main server hum is always louder than anything else though; you learn to tune out it eventually.
+T5: Inky> The real silence starts around three AM and lasts until dawn hits. It’s when everything settles down after all that daytime noise fades out. I usually just finish wiping the main conduits then, nothing more important happens at 4:01 a.m., not unless something breaks itself which is rare enough to be noteworthy.

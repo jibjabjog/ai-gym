@@ -432,6 +432,37 @@ completes instead of being cancelled. **Still unproven:** a real *Telegram-origi
 (the warm prompt matches the stored session prompt, but conversation history after the tools is
 read fresh each turn), and Hermes' tool-loop quality on gemma (§8–9 used the gym's own harness).
 
+## 12. Canon: making the actor keep his own story (09‑24)
+
+**Question.** Given a role brief and freedom to improvise (`characters/inky-janitor-actor.json`), Inky
+invents details — but a later re-ask ("what time does it go quiet?") got a *different* answer. Does a persistent
+fact ledger fix that?
+
+**Setup.** `exercise/character.sh`, sheet flag `"canon": true`. After each reply a second call (temp 0) extracts
+the concrete facts he stated; they are deduped (word-overlap ≥ 0.6), capped at 60 and saved to a file. Every brief
+carries all canon plus the ≤3 lines sharing a 5-letter word stem with the current question. gemma-4-E2B, temp 0.4.
+Raw: `results/2026-09-24-canon-reask.txt`, `results/2026-09-24-canon-consistency.txt`.
+
+**Result.**
+
+| Test | Outcome |
+|---|---|
+| Persistence across chats (new process, empty rolling memory) | re-ask answered from the file ("three in the morning") ✅ |
+| `/canon`, `/forget` | list / wipe the file ✅ |
+| Dedupe rule (4 unit pairs) | 4/4 ✅ |
+| **Direct re-ask**: ledger of 8 facts incl. "It gets quiet after 2 a.m."; "So what time does it go quiet down here?" | **5/5 answer 2 a.m.** (also 5/5 with the fact repeated in the user turn — no gain, so that option is off by default) |
+| Natural 5-turn chats, canon on vs off (3 runs each) | **inconclusive**: canon 1 consistent / 1 partial drift / 1 no time stated; off 1 / 1 / 1. (An earlier unsaved run looked better, 3/3 vs 1/3; it did not replicate, so it doesn't count.) |
+
+**Why the natural chats don't separate.** (1) The lookup only fires when the re-ask shares a word with a stored
+fact: he said he starts *rounds* at three, the player asked about *quiet*, so nothing matched. (2) The extractor is a 2B
+model and stores filler ("It is lukewarm coffee.", once "Inky has no concrete facts stated."); a junk filter was added.
+(3) Nothing checks a new answer *against* canon — he can still invent a contradicting fact, which is then saved too.
+(4) No baseline for the exact re-ask with the fact only in the rolling window (the ledger *is* the fact source there).
+
+**Verdict.** The mechanism works and covers the reported case (a fact stated earlier, re-asked with a shared word),
+including across chats. It does not make him reliably consistent in free conversation. Next: a semantic match
+(extract topic keywords with the fact) and a contradiction check before saving.
+
 ## Harness bugs found
 
 | Bug | Effect | Fix |

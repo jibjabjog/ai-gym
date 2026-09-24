@@ -12,13 +12,43 @@
 #   FULL=1 tests/hermes_failover.sh     # also wait for gemma's actual reply
 #   FORCE=1 tests/hermes_failover.sh    # run even if gemma is busy
 #
-# Why QUICK is the default: on this CPU box gemma reads prompts at only ~20 tok/s
-# and Hermes' fixed prompt (system + 23 tool schemas) is ~20k tokens, so a COLD
-# first turn can take 15-20 minutes. Once digested, the prompt cache makes repeat
-# turns near-instant. QUICK proves the routing without waiting for that. Killing
-# the one-shot does NOT cancel gemma's work — it keeps digesting the prompt, which
-# is harmless (it warms the cache; fallback_guard.sh treats a working model as
-# busy, never down).
+# Why QUICK is the default: on this CPU box gemma reads prompts at only ~11-40 tok/s
+# (slows as context grows) and Hermes' fixed prompt (system + tool schemas) is ~19k
+# tokens, so a COLD first turn can take ~30 min. Once digested, the prompt cache makes
+# repeat turns near-instant (1-2s). QUICK proves the routing without waiting for that.
+# Killing the one-shot does NOT cancel gemma's work — it keeps digesting the prompt,
+# which risks evicting the REAL production warm cache (parallel = 1 means one shared
+# slot — see CLAUDE.md). Prefer QUICK; only use FULL when you specifically need to
+# verify end-to-end completion, and be ready to re-run fallback_guard.sh afterward to
+# re-warm the real Telegram prompt.
+#
+# --- 2026-09-23: why this script now uses an isolated HERMES_HOME -------------
+# A bogus model name used to be enough: Hermes couldn't resolve its context length,
+# fell through every lookup tier, and (on 0.20.x) apparently landed on something
+# >= 64K. As of the installed 0.21.3, unresolvable models fall through ALL the way
+# to a hardcoded 32,768-token floor (agent/model_metadata.py's DEFAULT_FALLBACK_
+# CONTEXT), and agent_init.py's _enforce_minimum_context() now hard-rejects any
+# primary model reporting < 64K *before* attempting the request at all — so the
+# original bogus-name approach fails at that pre-flight gate and never reaches the
+# fallback-routing logic it was designed to exercise. Confirmed empirically: neither
+# a plain unrecognized name nor one crafted to substring-match a real model family
+# (e.g. containing "gpt-4" or "llama", which DO resolve to real context lengths when
+# get_model_context_length() is called directly) helps — something earlier in the
+# real CLI/agent-init path still lands on the 32K floor for a model with no live
+# catalog entry. Root cause not fully traced beyond that; not worth chasing further
+# when there's a clean, documented fix available.
+#
+# The fix: config.yaml's `model.context_length` is an explicit override — step 0
+# in get_model_context_length(), wins unconditionally, no live-catalog dependency.
+# There's no CLI flag or env var for it (checked), only config.yaml. Rather than
+# touch the LIVE config (never do that for a test), this script builds a throwaway
+# HERMES_HOME with its own minimal config.yaml (context_length forced to 65536,
+# fallback_model copied from the real config) and copies in the real .env so the
+# primary call still hits real OpenRouter with the real key — genuinely exercising
+# the real model_not_found classification, not a synthetic shortcut. Verified live:
+# the one-shot opened a connection to 127.0.0.1:8080 (the real fallback) within
+# seconds, same proof technique as before, now on a foundation that doesn't depend
+# on however Hermes happens to resolve context for an unknown model name today.
 set -uo pipefail
 
 HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
@@ -40,7 +70,8 @@ port="${server##*:}"
 echo "fallback: ${fb_model} at ${fb_url}"
 curl -sf -m 5 "${server}/health" >/dev/null || fail "fallback server ${server} is not healthy"
 
-# The model process, found by the alias the router gives it.
+# The model process, found by the alias the router gives it. [x] avoids matching
+# this very pgrep invocation's own command line (CLAUDE.md gotcha).
 model_pid="$(pgrep -f -- "--alias ${fb_model}" | head -1)"
 cpu_pct() {   # % of one core the model used over 2 s
     local t1 t2 hz
@@ -52,18 +83,39 @@ cpu_pct() {   # % of one core the model used over 2 s
 }
 busy_pct="$(cpu_pct)"
 if (( busy_pct >= 100 )) && [[ "${FORCE:-0}" != 1 ]]; then
-    fail "gemma is busy (${busy_pct}% CPU) — probably still digesting an earlier prompt, and this run would queue behind it. Wait for it to go idle, or FORCE=1."
+    fail "gemma is busy (${busy_pct}% CPU) — probably still digesting an earlier prompt, and this run would queue behind it (identical requests don't share in-flight work — CLAUDE.md). Wait for it to go idle, or FORCE=1."
 fi
 echo "gemma idle: ${busy_pct}% CPU. mode: $([[ ${FULL} == 1 ]] && echo FULL || echo QUICK), timeout ${TIMEOUT}s"
 
+# --- Build an isolated HERMES_HOME so the pre-flight context-length gate never
+# fires, without ever touching the live config.yaml or .env. --------------------
+scratch_home="$(mktemp -d)"
+cp "${HERMES_HOME}/.env" "${scratch_home}/.env" 2>/dev/null  # real key, never read/printed here
+cat > "${scratch_home}/config.yaml" <<EOF
+_config_version: 45
+model:
+  default: ${BOGUS_MODEL}
+  provider: openrouter
+  context_length: 65536
+providers:
+  custom:
+    base_url: https://openrouter.ai/api/v1
+fallback_model:
+  provider: custom
+  model: ${fb_model}
+  base_url: ${fb_url}
+  api_key: llama.cpp
+fallback_providers: []
+EOF
+
 # --- Run the forced failover in the background so we can watch its sockets
 usage_file="$(mktemp)"; out_file="$(mktemp)"
-trap 'kill "${hpid:-}" 2>/dev/null; rm -f "${usage_file}" "${out_file}"' EXIT
+trap 'kill "${hpid:-}" 2>/dev/null; rm -f "${usage_file}" "${out_file}"; rm -rf "${scratch_home}"' EXIT
 log_lines_before="$(wc -l < "${AGENT_LOG}" 2>/dev/null || echo 0)"
 
-echo "starting one-shot Hermes with primary model '${BOGUS_MODEL}'..."
+echo "starting one-shot Hermes (isolated HERMES_HOME) with primary model '${BOGUS_MODEL}'..."
 start=$(date +%s)
-( cd "${HOME}" && exec "${HERMES[@]}" -z "${PROMPT}" -m "${BOGUS_MODEL}" --provider openrouter \
+( cd "${HOME}" && HERMES_HOME="${scratch_home}" exec "${HERMES[@]}" -z "${PROMPT}" -m "${BOGUS_MODEL}" --provider openrouter \
     --usage-file "${usage_file}" ) > "${out_file}" 2>&1 &
 hpid=$!
 
@@ -99,7 +151,9 @@ fi
 [[ -n "${activation}" ]] && echo "log:                ${activation}"
 
 if [[ "${routed}" != 1 ]]; then
-    echo "FAIL: Hermes never connected to the fallback. Its output:"; echo "${reply:-<none>}"; exit 1
+    echo "FAIL: Hermes never connected to the fallback. Its output:"; echo "${reply:-<none>}"
+    echo "(If this is a context-length error again, the pre-flight gate has drifted further — see the 2026-09-23 header note.)"
+    exit 1
 fi
 if [[ "${FULL}" == 1 && "${usage_ok}" != "yes" ]]; then
     echo "FAIL: routed to the fallback but the run did not complete cleanly (timeout ${TIMEOUT}s?)"; exit 1
@@ -107,7 +161,9 @@ fi
 if [[ "${FULL}" == 1 ]]; then
     [[ "${reply}" == *"FAILOVER-OK"* ]] || echo "  note: reply didn't contain FAILOVER-OK (the model may paraphrase)"
     echo "PASS: failed over to ${fb_model} and completed in ${elapsed}s"
+    echo "  Re-run fallback_guard.sh now to re-warm the real Telegram prompt (this test's prompt likely evicted it — parallel=1, one shared slot)."
 else
     echo "PASS (quick): Hermes fails over to ${fb_model} in ${t_routed}s — completion not awaited"
-    echo "  (gemma may keep digesting the prompt for a while; harmless. Use FULL=1 to wait for the reply.)"
+    echo "  (gemma may keep digesting the prompt for a while; this can evict the real warm cache — parallel=1, one shared slot."
+    echo "  Re-run ~/.hermes/scripts/fallback_guard.sh once gemma goes idle to confirm/restore it.)"
 fi

@@ -1,0 +1,13 @@
+# Re-ask test 2026-09-24: ledger of 8 facts incl. 'It gets quiet after 2 a.m.'; question 'So what time does it go quiet down here?'
+# remind=0: relevant facts only in the system brief | remind=1: also in the user turn. HIT = answer says 2 a.m.
+remind=0 trial=1 [HIT] t gets quiet after 2 AM most nights. I usually finish my rounds by then and wipe down those conduits again. You ever notice the silence right before that happens, though?
+remind=0 trial=2 [HIT] t gets quiet after 2 AM for good now. I usually finish my rounds by then anyway, checking rack four and wiping the conduits again before heading out myself. You ever noti
+remind=0 trial=3 [HIT] t gets quiet after 2 AM sharp. I usually finish my rounds before then and wipe down conduits one last time. Does that help with your timing, though?
+remind=0 trial=4 [HIT] t gets quiet after 2 AM sharp. I usually finish my rounds by then and start wiping those conduits again. You notice the silence settling in, right around two-thirty maybe
+remind=0 trial=5 [HIT] t gets quiet after 2:00 AM most nights. I usually finish my rounds by then, checking rack four one last time before logging off for the shift. Did you notice anything unu
+remind=1 trial=1 [HIT] t goes quiet around two AM, usually right when the main cooling cycle settles. I'll be checking rack four then anyway; it always sounds different at that hour. Anything e
+remind=1 trial=2 [HIT] t quiets up around two AM, sharp as the clock ticks at three in the morning. I finish wiping these old metal pipes before then and start my rounds again. Do you need anyt
+remind=1 trial=3 [HIT] t quiets up around two AM, sharp as the clock says. I've got my mop ready for those late hours now. You ever notice how loud Rack four hums when it’s finally quiet?
+remind=1 trial=4 [HIT] t quiets up around two AM, sharp as the clock says I start my rounds at three. The silence then is usually just the hum of rack four and me wiping down those old pipes in
+remind=1 trial=5 [HIT] t goes quiet around two AM, sharp as the clock dictates. I've got my mop ready for when things settle in again. You ever notice how different it sounds then?
+SUMMARY remind=0: 5/5   remind=1: 5/5

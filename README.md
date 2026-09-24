@@ -46,6 +46,13 @@ gemma lives behind `llama-router.service`, which is now **Hermes' live
 fallback** (since 2026-09-18) — it stays running; don't stop it after tests.
 Scripts skip unreachable candidates with a hint.
 
+### Inky remembers what he says
+
+`inky` (the actor sheet) keeps a **canon**: after each reply, the concrete facts he just stated ("it gets quiet
+after 2 a.m.") are saved to `~/.local/share/inky/canon-inky.json`, survive between chats, and are put in front of him
+— all of them, plus the ones relevant to the question — so he looks them up before improvising. In chat:
+`/canon` lists them, `/forget` wipes them. Details and limits: FINDINGS §12.
+
 ### Is the fallback actually ready?
 
 `~/.hermes/scripts/fallback_guard.sh -v` (also runs every 5 min from cron) answers with a real
@@ -90,6 +97,9 @@ CANDIDATES="Spark 4B|ollama|127.0.0.1|11434|SparkLLM/Spark-X2.5-4B" exercise/int
 | `INKY_TEMPERATURE` | 0.4 character · 0.3 evals | character, interview, agent_loop, heartbeat |
 | `INKY_REPEAT_PENALTY` / `INKY_RETRY_TEMPERATURE` | 1.3 / 1.0 | character |
 | `INKY_CHARACTER` | `characters/inky-janitor.json` | character |
+| `INKY_MEMORY_MAX` / `INKY_MEMORY_SHOWN` | 12 / 6 | character — rolling memory kept / lines shown in the brief |
+| `INKY_CANON` | sheet's `"canon"` flag | character — `off`, or a file path; default `~/.local/share/inky/canon-<name>.json` |
+| `INKY_CANON_MAX` / `INKY_CANON_DEBUG` / `INKY_CANON_REMIND` | 60 / 0 / 0 | character — facts kept / print what is learned / also remind in the user turn |
 | `INKY_MOOD_TYPE` / `INKY_MOOD_SETTING` | sheet's start | character — jump to a band / exact value |
 | `INKY_MOOD_LOCK` / `INKY_MOOD_DEBUG` | `0` | character — freeze mood / print it each turn |
 | `INKY_RUNS` / `INKY_MAX_STEPS` | 1 / 8 (loop), 6 (heartbeat) | agent_loop, heartbeat |
