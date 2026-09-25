@@ -51,18 +51,25 @@ tc "Inky starts his rounds at three AM sharp." "It gets quiet after 2 a.m."     
 tc "Inky has lukewarm coffee in his thermos."  "The coffee is cold by two in the morning."         NO   # the fact has no time
 
 echo "== A4. _canon_parse (offline): keeps facts, drops fragments / NONE / feelings =="
-parsed="$(_canon_parse $'It gets quiet after 2 a.m. | quiet, silence, night\n- Inky checks rack seven every hour. | rack, seven\nTuesday |\nBurnt plastic |\nNONE\nInky is feeling tired | tired\nInky has no concrete facts stated.')"
-[[ "$(echo "${parsed}" | jq 'length')" == "2" ]] && ok "7 lines -> 2 facts" || { bad "expected 2 facts, got: $(echo "${parsed}" | jq -c '[.[].f]')"; }
+parsed="$(_canon_parse $'It gets quiet after 2 a.m. | quiet, silence, night\n- Inky checks rack seven every hour. | rack, seven\nTuesday |\nBurnt plastic |\nNONE\nInky is feeling tired | tired\nInky is fine | fine\nInky has no concrete facts stated.')"
+[[ "$(echo "${parsed}" | jq 'length')" == "2" ]] && ok "8 lines -> 2 facts" || { bad "expected 2 facts, got: $(echo "${parsed}" | jq -c '[.[].f]')"; }
+kept="$(_canon_parse $'The coffee is good and strong at night | coffee\nInky is well known on the night shift | shift\nInky is fine | fine' | jq -c '[.[].f]')"
+[[ "${kept}" == '["The coffee is good and strong at night","Inky is well known on the night shift"]' ]] && ok "mood-only 'is fine' dropped, real 'is good/well ...' facts kept" || bad "mood filter too eager or too lax: ${kept}"
 [[ "$(echo "${parsed}" | jq -r '.[0].k | join(",")')" == "quiet,silence,night" ]] && ok "topic words parsed" || bad "topic words wrong: $(echo "${parsed}" | jq -c '.[0].k')"
 
-echo "== A2. near-duplicate filter (through canon_learn's merge rule, offline) =="
-dup="$(jq -n -c --argjson old '[{"f":"Inky keeps a thermos full of lukewarm coffee.","k":[]}]' \
-    --argjson new '[{"f":"Inky keeps the thermos full of lukewarm coffee.","k":[]},{"f":"A drone got stuck on rack seven.","k":[]}]' '
-    def norm: ascii_downcase | gsub("[^a-z0-9 ]"; "") | gsub("\\s+"; " ");
-    def ws: norm | split(" ") | map(select(length > 2)) | unique;
-    def similar($a; $b): ($a | ws) as $x | ($b | ws) as $y | (($x - ($x - $y)) | length) as $i | (($x + $y) | unique | length) as $u | $u > 0 and ($i / $u) >= 0.6;
-    reduce $new[] as $n ($old; if any(.[]; similar(.f; $n.f)) then . else . + [$n] end) | length')"
-[[ "${dup}" == "2" ]] && ok "3 candidates -> 2 kept (the paraphrase dropped)" || bad "expected 2 facts, got ${dup}"
+echo "== A2. paraphrase merge: canon_merge (offline) =="
+merge_n() {   # $1 label, $2 want count, $3 old fact, $4 new fact
+    local got; got="$(canon_merge "$(jq -n -c --arg f "$3" '[{f: $f, k: []}]')" "$(jq -n -c --arg f "$4" '[{f: $f, k: []}]')" | jq 'length')"
+    [[ "${got}" == "$2" ]] && ok "$1 -> ${got} fact(s)" || bad "$1: want $2 got ${got}   ($3 || $4)"
+}
+merge_n "article swap merges"                         1 "Inky keeps a thermos full of lukewarm coffee."  "Inky keeps the thermos full of lukewarm coffee."
+merge_n "2 a.m. = two in the morning"                 1 "It gets quiet after 2 a.m."                      "It gets quiet after two in the morning."
+merge_n "2 a.m. = 2:00 AM"                            1 "It gets quiet after 2 a.m."                      "It gets quiet after 2:00 AM."
+merge_n "six in the evening = 6 p.m."                 1 "Inky ends his shift at six in the evening."     "Inky ends his shift at 6 p.m."
+merge_n "DIFFERENT times are not merged (2 vs 4)"     2 "It gets quiet after 2 a.m."                      "It gets quiet after 4 a.m."
+merge_n "different times in words are not merged"     2 "It gets quiet after two in the morning."        "It gets quiet after four in the morning."
+merge_n "rack seven vs rack twelve are not merged"    2 "A drone got stuck on rack seven once."          "A drone got stuck on rack twelve once."
+merge_n "unrelated facts are not merged"              2 "A drone got stuck on rack seven once."          "Inky keeps a thermos of lukewarm coffee."
 
 if [[ "${OFFLINE:-0}" == "1" ]]; then echo; echo "offline only: ${pass} passed, ${fail} failed"; (( fail == 0 )); exit; fi
 curl -sf -m 5 "${BASE_URL}/health" >/dev/null || { echo "model at ${BASE_URL} is not healthy — skipping B and C"; (( fail == 0 )); exit; }

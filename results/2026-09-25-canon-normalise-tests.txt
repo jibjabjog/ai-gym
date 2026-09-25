@@ -1,0 +1,139 @@
+# tests/canon.sh after the number/time normaliser + mood filter, 2026-09-25, gemma-4-E2B on :8080. Three full runs, unedited.
+
+######## run 1
+== A. canon_relevant (offline) ==
+  ok   "What time does it go quiet?" -> It gets quiet after 2 a.m.
+  ok   "Is it ever silent down here?" -> It gets quiet after 2 a.m.
+  ok   "What do you drink at night?" -> Inky keeps lukewarm coffee in his thermos.
+  ok   "Tell me about that robot." -> A drone got stuck on rack seven once.
+  ok   "When do you start work?" -> Inky starts his rounds at three AM sharp.
+  ok   "What is your favourite colour?" -> (nothing)
+  ok   "How many mops do you own?" -> (nothing)
+== A3. _canon_time_conflict (offline, deterministic) ==
+  ok   YES: "It gets quiet after 2 a.m." vs "It goes quiet around four in the morning."
+  ok   NO: "It gets quiet after 2 a.m." vs "It gets quiet after two in the morning, mostly."
+  ok   NO: "It gets quiet after 2 a.m." vs "Quiet after 2 a.m., like I said."
+  ok   NO: "It gets quiet after 2 a.m." vs "The fans hum all night, that is how it is."
+  ok   YES: "Inky starts his rounds at three AM sharp." vs "I start my rounds at midnight."
+  ok   NO: "Inky starts his rounds at three AM sharp." vs "Three AM, sharp, same as always."
+  ok   YES: "Inky starts his rounds at three AM sharp." vs "Rounds? Six in the evening, before anyone clocks on."
+  ok   NO: "Inky starts his rounds at three AM sharp." vs "It gets quiet after 2 a.m."
+  ok   NO: "Inky has lukewarm coffee in his thermos." vs "The coffee is cold by two in the morning."
+== A4. _canon_parse (offline): keeps facts, drops fragments / NONE / feelings ==
+  ok   8 lines -> 2 facts
+  ok   mood-only 'is fine' dropped, real 'is good/well ...' facts kept
+  ok   topic words parsed
+== A2. paraphrase merge: canon_merge (offline) ==
+  ok   article swap merges -> 1 fact(s)
+  ok   2 a.m. = two in the morning -> 1 fact(s)
+  ok   2 a.m. = 2:00 AM -> 1 fact(s)
+  ok   six in the evening = 6 p.m. -> 1 fact(s)
+  ok   DIFFERENT times are not merged (2 vs 4) -> 2 fact(s)
+  ok   different times in words are not merged -> 2 fact(s)
+  ok   rack seven vs rack twelve are not merged -> 2 fact(s)
+  ok   unrelated facts are not merged -> 2 fact(s)
+== B. canon_contradicts: judge accuracy on labeled pairs (temp 0) ==
+    miss: want YES got NO | It gets quiet after 2 a.m. || Things settle at about six AM.
+  judge: 11/12 right — catches contradictions 5/6, clears consistent replies 6/6
+  ok   judge accuracy >= 75%
+== C. canon_learn: extractor on sample exchanges ==
+  learned 2 fact(s), 2 with topic words:
+    - Inky gets quiet after 2 a.m.   {quiet, silence, night, hour, late}
+    - Inky mops rack four by himself   {mop, rack, four, myself, alone}
+  ok   the 2 a.m. fact was extracted
+  ok   every fact has topic words
+  ok   no facts invented from a mood-only reply
+
+31 passed, 0 failed
+
+######## run 2
+== A. canon_relevant (offline) ==
+  ok   "What time does it go quiet?" -> It gets quiet after 2 a.m.
+  ok   "Is it ever silent down here?" -> It gets quiet after 2 a.m.
+  ok   "What do you drink at night?" -> Inky keeps lukewarm coffee in his thermos.
+  ok   "Tell me about that robot." -> A drone got stuck on rack seven once.
+  ok   "When do you start work?" -> Inky starts his rounds at three AM sharp.
+  ok   "What is your favourite colour?" -> (nothing)
+  ok   "How many mops do you own?" -> (nothing)
+== A3. _canon_time_conflict (offline, deterministic) ==
+  ok   YES: "It gets quiet after 2 a.m." vs "It goes quiet around four in the morning."
+  ok   NO: "It gets quiet after 2 a.m." vs "It gets quiet after two in the morning, mostly."
+  ok   NO: "It gets quiet after 2 a.m." vs "Quiet after 2 a.m., like I said."
+  ok   NO: "It gets quiet after 2 a.m." vs "The fans hum all night, that is how it is."
+  ok   YES: "Inky starts his rounds at three AM sharp." vs "I start my rounds at midnight."
+  ok   NO: "Inky starts his rounds at three AM sharp." vs "Three AM, sharp, same as always."
+  ok   YES: "Inky starts his rounds at three AM sharp." vs "Rounds? Six in the evening, before anyone clocks on."
+  ok   NO: "Inky starts his rounds at three AM sharp." vs "It gets quiet after 2 a.m."
+  ok   NO: "Inky has lukewarm coffee in his thermos." vs "The coffee is cold by two in the morning."
+== A4. _canon_parse (offline): keeps facts, drops fragments / NONE / feelings ==
+  ok   8 lines -> 2 facts
+  ok   mood-only 'is fine' dropped, real 'is good/well ...' facts kept
+  ok   topic words parsed
+== A2. paraphrase merge: canon_merge (offline) ==
+  ok   article swap merges -> 1 fact(s)
+  ok   2 a.m. = two in the morning -> 1 fact(s)
+  ok   2 a.m. = 2:00 AM -> 1 fact(s)
+  ok   six in the evening = 6 p.m. -> 1 fact(s)
+  ok   DIFFERENT times are not merged (2 vs 4) -> 2 fact(s)
+  ok   different times in words are not merged -> 2 fact(s)
+  ok   rack seven vs rack twelve are not merged -> 2 fact(s)
+  ok   unrelated facts are not merged -> 2 fact(s)
+== B. canon_contradicts: judge accuracy on labeled pairs (temp 0) ==
+    miss: want YES got NO | It gets quiet after 2 a.m. || Things settle at about six AM.
+  judge: 11/12 right — catches contradictions 5/6, clears consistent replies 6/6
+  ok   judge accuracy >= 75%
+== C. canon_learn: extractor on sample exchanges ==
+  learned 2 fact(s), 2 with topic words:
+    - Inky gets quiet after 2 a.m.   {quiet, silence, night, hour, late}
+    - Inky mops rack four by himself   {mop, rack, four, myself, alone}
+  ok   the 2 a.m. fact was extracted
+  ok   every fact has topic words
+  ok   no facts invented from a mood-only reply
+
+31 passed, 0 failed
+
+######## run 3
+== A. canon_relevant (offline) ==
+  ok   "What time does it go quiet?" -> It gets quiet after 2 a.m.
+  ok   "Is it ever silent down here?" -> It gets quiet after 2 a.m.
+  ok   "What do you drink at night?" -> Inky keeps lukewarm coffee in his thermos.
+  ok   "Tell me about that robot." -> A drone got stuck on rack seven once.
+  ok   "When do you start work?" -> Inky starts his rounds at three AM sharp.
+  ok   "What is your favourite colour?" -> (nothing)
+  ok   "How many mops do you own?" -> (nothing)
+== A3. _canon_time_conflict (offline, deterministic) ==
+  ok   YES: "It gets quiet after 2 a.m." vs "It goes quiet around four in the morning."
+  ok   NO: "It gets quiet after 2 a.m." vs "It gets quiet after two in the morning, mostly."
+  ok   NO: "It gets quiet after 2 a.m." vs "Quiet after 2 a.m., like I said."
+  ok   NO: "It gets quiet after 2 a.m." vs "The fans hum all night, that is how it is."
+  ok   YES: "Inky starts his rounds at three AM sharp." vs "I start my rounds at midnight."
+  ok   NO: "Inky starts his rounds at three AM sharp." vs "Three AM, sharp, same as always."
+  ok   YES: "Inky starts his rounds at three AM sharp." vs "Rounds? Six in the evening, before anyone clocks on."
+  ok   NO: "Inky starts his rounds at three AM sharp." vs "It gets quiet after 2 a.m."
+  ok   NO: "Inky has lukewarm coffee in his thermos." vs "The coffee is cold by two in the morning."
+== A4. _canon_parse (offline): keeps facts, drops fragments / NONE / feelings ==
+  ok   8 lines -> 2 facts
+  ok   mood-only 'is fine' dropped, real 'is good/well ...' facts kept
+  ok   topic words parsed
+== A2. paraphrase merge: canon_merge (offline) ==
+  ok   article swap merges -> 1 fact(s)
+  ok   2 a.m. = two in the morning -> 1 fact(s)
+  ok   2 a.m. = 2:00 AM -> 1 fact(s)
+  ok   six in the evening = 6 p.m. -> 1 fact(s)
+  ok   DIFFERENT times are not merged (2 vs 4) -> 2 fact(s)
+  ok   different times in words are not merged -> 2 fact(s)
+  ok   rack seven vs rack twelve are not merged -> 2 fact(s)
+  ok   unrelated facts are not merged -> 2 fact(s)
+== B. canon_contradicts: judge accuracy on labeled pairs (temp 0) ==
+    miss: want YES got NO | It gets quiet after 2 a.m. || Things settle at about six AM.
+  judge: 11/12 right — catches contradictions 5/6, clears consistent replies 6/6
+  ok   judge accuracy >= 75%
+== C. canon_learn: extractor on sample exchanges ==
+  learned 2 fact(s), 2 with topic words:
+    - Inky gets quiet after 2 a.m.   {quiet, silence, night, hour, late}
+    - Inky mops rack four by himself   {mop, rack, four, myself, alone}
+  ok   the 2 a.m. fact was extracted
+  ok   every fact has topic words
+  ok   no facts invented from a mood-only reply
+
+31 passed, 0 failed

@@ -78,6 +78,36 @@ canon_relevant() {
         | sort_by(-.s) | .[0:3] | map(.f)'
 }
 
+# Normalise numbers and clock times so paraphrases compare equal: "two in the morning", "2 a.m.",
+# "2:00 AM" -> "2am"; "six in the evening" -> "6pm"; number words -> digits ("rack seven" -> "rack 7").
+# ("one" is only converted before a time marker, so "no one" survives.)
+CANON_JQ_DEFS='def numwords: {"zero":"0","two":"2","three":"3","four":"4","five":"5","six":"6","seven":"7","eight":"8","nine":"9","ten":"10","eleven":"11","twelve":"12","thirteen":"13","fourteen":"14","fifteen":"15","sixteen":"16","seventeen":"17","eighteen":"18","nineteen":"19","twenty":"20","thirty":"30","forty":"40","fifty":"50"};
+def normtext:
+    ascii_downcase
+    | gsub("(?<h>\\d{1,2}):00"; "\(.h)")
+    | gsub("\\bone(?=\\s?(?:a\\.?m|p\\.?m|o.clock|in the (?:morning|afternoon|evening)))"; "1")
+    | gsub("\\b(?<w>zero|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty)\\b"; numwords[.w])
+    | gsub("\\bmidnight\\b"; "12am") | gsub("\\bnoon\\b"; "12pm")
+    | gsub("(?<h>\\d{1,2})(?::(?<m>\\d\\d))?\\s?(?:a\\.?m\\b\\.?|in the morning|at dawn)"; "\(.h)\(if .m then ":" + .m else "" end)am")
+    | gsub("(?<h>\\d{1,2})(?::(?<m>\\d\\d))?\\s?(?:p\\.?m\\b\\.?|in the (?:afternoon|evening)|at night)"; "\(.h)\(if .m then ":" + .m else "" end)pm");
+def toks: normtext | gsub("[^a-z0-9: ]"; " ") | split(" ") | map(select(length > 0));
+def ws: toks | map(select(length > 2 or test("[0-9]"))) | unique;
+def nums: toks | map(select(test("[0-9]"))) | unique;
+# Same fact, different wording: word-set Jaccard >= 0.6 AND the same numbers/times. (Digits used to be
+# dropped from the comparison, so "after 2 a.m." and "after 4 a.m." looked identical and the newer,
+# conflicting fact was silently discarded.)
+def similar($a; $b): ($a | ws) as $x | ($b | ws) as $y
+    | (($x - ($x - $y)) | length) as $i | (($x + $y) | unique | length) as $u
+    | $u > 0 and ($i / $u) >= 0.6 and (($a | nums) == ($b | nums));
+'
+
+# canon_merge <old-json> <new-json> [cap]  ->  the merged ledger (new facts appended unless a paraphrase
+# of one already there; oldest dropped past the cap).
+canon_merge() {
+    jq -n -c --argjson old "$1" --argjson new "$2" --argjson cap "${3:-${CANON_MAX}}" "${CANON_JQ_DEFS}"'
+        reduce $new[] as $n ($old; if any(.[]; similar(.f; $n.f)) then . else . + [$n] end) | .[-$cap:]'
+}
+
 # Model output -> [{"f": fact, "k": [topic words]}]. One "fact | word, word" per line. Drops NONE,
 # "no facts" boilerplate, feelings, over-long lines, and fragments (fewer than 3 words — the extractor
 # sometimes emits bare topic words as their own lines, e.g. "Tuesday |").
@@ -91,7 +121,7 @@ _canon_parse() {
             and ((.f | split(" ") | length) >= 3)
             and ((.f | test("^none\\.?$"; "i")) | not)
             and ((.f | test("no (concrete|new|specific|hard) fact|nothing concrete|not stated|no facts"; "i")) | not)
-            and ((.f | test("\\b(feel|feels|feeling|felt|tired|proud|happy|sad|lonely|bored|angry|mood|emotion)\\b"; "i")) | not)))'
+            and ((.f | test("\\b(feel|feels|feeling|felt|tired|proud|happy|sad|lonely|bored|angry|mood|emotion)\\b|\\b(is|are|was|am) (fine|okay|ok|alright|good|well|great|bad|calm|content|upset)[.!]?\\s*$"; "i")) | not)))'
 }
 
 # Extract the new concrete facts (+ topic words) from one exchange; merge into canon.
@@ -102,13 +132,7 @@ canon_learn() {
     text="$(_canon_call "${sys}" "Player: ${q}"$'\n'"${char_name}: ${reply}" 160)"
     [[ -z "${text}" ]] && return 0
     new="$(_canon_parse "${text}")"
-    added="$(jq -n -c --argjson old "${canon}" --argjson new "${new}" --argjson cap "${CANON_MAX}" '
-        def norm: ascii_downcase | gsub("[^a-z0-9 ]"; "") | gsub("\\s+"; " ");
-        def ws: norm | split(" ") | map(select(length > 2)) | unique;
-        def similar($a; $b): ($a | ws) as $x | ($b | ws) as $y
-            | (($x - ($x - $y)) | length) as $i | (($x + $y) | unique | length) as $u
-            | $u > 0 and ($i / $u) >= 0.6;
-        reduce $new[] as $n ($old; if any(.[]; similar(.f; $n.f)) then . else . + [$n] end) | .[-$cap:]')"
+    added="$(canon_merge "${canon}" "${new}" "${CANON_MAX}")"
     if [[ "${INKY_CANON_DEBUG:-0}" == "1" ]]; then
         echo "  [canon +$(jq -n --argjson a "${added}" --argjson o "${canon}" '($a | length) - ($o | length)'): $(echo "${new}" | jq -r 'map(.f + " {" + (.k | join(",")) + "}") | join(" | ")')]"
     fi

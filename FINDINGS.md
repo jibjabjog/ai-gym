@@ -513,8 +513,38 @@ and "rounds around four AM" reappear in new words).
 **Verdict.** It does what it was built for: consistent answers no longer arrive as copies. Caveats: the thresholds come from
 12 pairs and the live check is 3 vs 3 — directional, not proven; it applies to every sheet, and would also have caught the
 original terse-sheet loop ("a sock with an eyelet on its toe… it was a sock…", 0.64 whole-reply overlap); a retry is one more
-model call on the turns where it fires. Still open: number-word/digit normalisation in the canon paraphrase filter (§12b),
-and a larger A/B.
+model call on the turns where it fires. Still open: a larger A/B (the number-word/digit gap in the paraphrase filter is closed, §12d).
+
+### 12d. Number and time normalisation in the paraphrase filter (09‑25)
+
+**Question.** The canon dedupe treated "after 2 a.m." and "after two in the morning" as different facts. Is there code
+to adopt for paraphrase filtering?
+
+**Setup / decision.** Looked at three routes: our own normaliser; small embedding models served by the llama.cpp already
+installed (`--embedding`; e.g. `ggml-org/gte-small-Q8_0-GGUF`); and Python semantic-dedup libraries (SemHash / Model2Vec).
+Chose the first: the reported case is digits-vs-words, not semantics, and embedding models are weak on numbers (they rate
+"after 2 a.m." ≈ "after 4 a.m."), which would be exactly wrong for a continuity ledger. `lib/canon.sh` now normalises
+number words → digits and clock phrases → `Nam`/`Npm` ("2 a.m.", "2:00 AM", "two in the morning" → `2am`; "one" only before a
+time marker, so "no one" survives) and compares word sets *including* numbers. Two facts are the same only if the word overlap is
+≥ 0.6 **and** their numbers/times are equal. The merge is now one function, `canon_merge`, used by `canon_learn` and the tests
+(the test previously carried its own copy of the rule). Raw: `results/2026-09-25-canon-normalise-tests.txt`.
+
+**Result.** `tests/canon.sh` **31/31 in three consecutive full runs** (27 offline); an earlier run of the same suite scored 29/30 — see the flake below. New merge cases: article swap, `2 a.m.` = `two in the morning` = `2:00 AM`,
+`six in the evening` = `6 p.m.` all merge to one fact; `2` vs `4 a.m.`, `two` vs `four in the morning`, `rack seven` vs
+`rack twelve` and unrelated facts stay separate. **A latent bug came out of it:** the old rule dropped digits from the
+comparison, so a later, *conflicting* fact ("quiet after 4 a.m.") was judged a duplicate of "quiet after 2 a.m." and silently
+discarded; both are now kept. A live chat with a seeded ledger merged the re-extracted 2 a.m. fact instead of duplicating it.
+
+**A flake, and a mistake of mine.** One run failed the model-backed check "no facts invented from a mood-only reply": at temperature 0
+the extractor returned "Inky is fine" that time and nothing on the previous run (output is not fully repeatable even at temp 0).
+The parser now drops a fact that *ends* in a bare mood word ("… is fine/okay/good/well…"). My first version of that filter was too
+greedy and would have discarded real facts ("The coffee is good and strong at night", "Inky is well known on the night shift") —
+caught by a sanity check, anchored to the end of the fact, and both are now must-keep test cases. Judge accuracy is unchanged and
+stable across the three runs: 11/12 (its one miss is a paraphrase with no shared word).
+
+**Verdict.** The reported gap is closed with ~30 lines of jq and no dependency. Not covered, by design: true paraphrases that
+share no words ("wipes down conduits" / "cleans the pipes") — the case where an embedding model would earn its place; measure how
+often that happens in a real ledger first. Also seen: the extractor sometimes saves a behaviour as a fact ("Inky asks about the lights.").
 
 ## Harness bugs found
 
