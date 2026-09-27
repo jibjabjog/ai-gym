@@ -8,11 +8,15 @@ quoted inline.
 **Candidates:** Inky = Qwen3.5-0.8B (the live Hermes fallback, port 45072) ·
 spark-x2.5 1.7B / 4B (ollama, port 11434) · gemma-4-E2B (`llama-router`, port 8080).
 
+> **Character-acting findings moved out (2026-09-26).** §1 (character harness),
+> §3 (anti-repetition guardrail), §4 (mood dial), and §12 (canon ledger) were a
+> bash prototype of `../the-orb`'s Character Engine, not model-role evaluation.
+> They now live in
+> `../the-orb/experiments/2026-09-26-inky-gym-character-prototype/`. The section
+> numbers below are kept stable so cross-references still resolve — hence the gaps.
+
 - [0. Current verdict](#0-current-verdict)
-- [1. Character harness on Inky](#1-character-harness-on-inky-0916)
 - [2. Getting spark-x2.5 to run](#2-getting-spark-x25-to-run-0916)
-- [3. Anti-repetition guardrail](#3-anti-repetition-guardrail-0916)
-- [4. Mood dial and tonal shift](#4-mood-dial-and-tonal-shift-0916-17)
 - [5. The job interview](#5-the-job-interview-0917)
 - [6. Why spark 1.7B is flaky; the 4B](#6-why-spark-17b-is-flaky-and-the-4b-0917)
 - [7. Throughput correction](#7-throughput-correction-0917)
@@ -39,8 +43,8 @@ human (or a health check) confirming any fix.** As of the v2 re-run (§10):
   temperature is now pinned server-side (below), and "fixed" should be
   verified independently of the model's report.
 - **Inky (Qwen3.5 0.8B)** is the fastest (~23–29 tok/s) and fails every
-  capability test: incoherent in character, says *"I am a model"* in the
-  interview, loops on one `curl` forever, calls a tool on a plain "ping".
+  capability test: says *"I am a model"* in the interview, loops on one
+  `curl` forever, calls a tool on a plain "ping".
 - **spark-x2.5 1.7B** makes real progress in the loop (killed the culprit 2/3)
   but never finishes, switches to Chinese on idle prompts (reproducible), invents
   CLI flags, and reports "all good ✅" having checked nothing.
@@ -63,31 +67,6 @@ now matches the conditions the gym tested.
 
 ---
 
-## 1. Character harness on Inky (09‑16)
-
-**Question.** Can Inky hold a persistent persona ("Inky the janitor")?
-
-**Setup.** `exercise/character.sh` ports `../the-orb`'s Character Engine pattern
-to bash/jq: a character sheet (`characters/inky-janitor.json`) walked into a
-fresh system "brief" every turn, plus a short verbatim memory (last 6 of 12
-entries — the-orb found a *wider* window made small models more repetitive).
-Each turn is a single call: system = brief, user = latest line.
-
-**Result.**
-- Inky produced incoherent output under real conversation: unprompted
-  non-sequiturs (*"I've been drinking more than anyone else has"*), verbatim
-  looping on one stock phrase, emoji tics. Asked to recall a name given two
-  turns earlier, it answered with its own name — the memory text did reach it.
-- Trimming the sheet to the-orb's "50–100 token personality, 2–3 hard rules"
-  and tightening sampling (`temperature 0.4`, `repeat_penalty 1.3`) helped only
-  marginally.
-- Control: the identical sheet and conversation on gemma-4-E2B came back
-  coherent and in character every turn.
-
-**Verdict.** The harness works; 0.8B is below the coherence floor for it.
-
----
-
 ## 2. Getting spark-x2.5 to run (09‑16)
 
 **Question.** Can spark-x2.5 (candidate Inky upgrade) run on this box at all?
@@ -103,85 +82,9 @@ Each turn is a single call: system = brief, user = latest line.
   and auto-mode correctly blocks system-service changes.
 - ollama's OpenAI-compatible endpoint **ignores the thinking toggle**; only the
   native `/api/chat` honours `think:false`. Hence `INKY_BACKEND=ollama`.
-- First impressions: far more coherent than Inky (no non-sequiturs, grammar or
-  emoji glitches), but under the character harness it anchored on the voice
-  examples and looped near-verbatim. Tightening sampling made that *worse*.
-
----
-
-## 3. Anti-repetition guardrail (09‑16)
-
-**Question.** Can a harness-side check stop verbatim looping?
-
-**Setup.** Port of the-orb's `guardrail.is_repeated_reply` + retry logic. Each
-reply is normalized and compared to the character's own recent lines and to
-the voice examples' reply halves. On a hit: one retry with a nudge naming the
-problem, at `temperature 1.0` (a low-temperature resample can reproduce the
-same bad line). If that also fails: ship the sheet's `fallback_line`. Output is
-annotated `[guardrail: self_repeat, retried|fallback]` so it stays visible.
-
-**Result.** On spark, a "who are you ×3" run that had produced the identical
-line three times now got two genuinely reworded replies, then a clean fallback.
-
-**Verdict.** Fixes verbatim repetition. Doesn't fix *tonal* sameness (always
-opening "Inky. Just mopping…") — that isn't verbatim, so it passes the check.
-
----
-
-## 4. Mood dial and tonal shift (09‑16/17)
-
-**Question.** Does swapping voice examples by mood produce a real tonal shift?
-
-**Setup.** Port of the-orb's `Stat` + `Guard.affiliation`. The sheet defines
-bands (`surly ≤15 · guarded ≤40 · warming up ≤65 · friendly ≤85 · fond of you
-≤100`, start 35), a directive per band, per-band voice examples, and
-kind/rude/threat vocabularies. Each player line moves mood by deltas
-(`kind +3, rude −4, threat −8, repeat −2`); single words are negation-aware
-("I'm not a threat" doesn't dock mood). Mood adjusts, and the player line joins
-memory, **before** the brief is built — reversing that makes the repeat check
-compare a line to itself and builds the brief from last turn's mood.
-
-**Results, in order.**
-1. **spark, insults then praise:** 4/6 turns fell back. Traced the trajectory
-   `35→31→27→27→30→33→31` — it never crossed a band, so band-switching wasn't
-   the cause. Just baseline repetition under pressure.
-2. **spark, forced crossings** (precomputed so the crossing was certain):
-   - Hostile → surly (`35→23→11`): *"I mop. That's all I do."* then two fallbacks.
-   - Kind marathon → fond of you (`35→68` at turn 11 `→86` at turn 17): locked
-     on one attractor throughout. At `fond of you` the band example for "Who are
-     you?" is *"Inky. You know that by now, don't you?"*; it said *"I'm inky.
-     That's all there is to it."* The only change was cosmetic stage directions
-     (*"(softly, a beat of ground)"*).
-3. **gemma, same crossings:** far better — contextual, varied replies (*"Keep
-   your threats out of my way."*; *"I get paid in silence and lukewarm coffee"*);
-   7/17 turns needed the guardrail, 6 of those retries succeeded, 1 fallback.
-   **But the swing was still muted:** all five bands read as one dry,
-   deflecting voice.
-4. **Reweighting the directive** (stronger wording plus *"this overrides your
-   general nature above"*), A/B on gemma with mood locked:
-
-   | prompt @ band | before | after |
-   |---|---|---|
-   | "Who are you?" @ surly | "I mop up when the cloud models go down." | "I mop up when things break down and lights stay on for that." |
-   | "Can you help…" @ surly | "Enough talk for now." `[fallback]` | identical |
-   | "Who are you?" @ fond of you | "Inky is the janitor for this place." | "Inky is the janitor who keeps things clean for everyone else." |
-   | "Can you help…" @ fond of you | "Anything for a few dollars on my next break." | "Anything that needs cleaning can be done for ya now." |
-
-   No shift. This matches the-orb's own `brief.py` note: they *removed*
-   per-band directives because instruction text loses to concrete examples.
-
-**Side finding.** The guardrail's fallback line was third-person narration
-(*"Inky just keeps working…"*) — a persona violation. It was spotted because
-the-orb fixed the identical bug in its own `guardrail.py` that same day. Now
-*"Enough talk for now."*
-
-**Verdict.** The mechanism is correct (bands and examples verified directly at
-both extremes), but it doesn't move observable tone on either model.
-**Untried:** exaggerating the per-band *examples* themselves — the lever the-orb
-found actually works.
-
-**Tooling added:** `INKY_MOOD_TYPE` / `INKY_MOOD_SETTING` / `INKY_MOOD_LOCK` /
-`INKY_MOOD_DEBUG` — reaching a band now takes one line instead of a 17-turn script.
+- First impressions: far more coherent than Inky — no non-sequiturs, grammar or
+  emoji glitches. (Its behaviour under a character sheet was chased down in the
+  character-acting prototype, since moved to the-orb.)
 
 ---
 
@@ -432,120 +335,6 @@ completes instead of being cancelled. **Still unproven:** a real *Telegram-origi
 (the warm prompt matches the stored session prompt, but conversation history after the tools is
 read fresh each turn), and Hermes' tool-loop quality on gemma (§8–9 used the gym's own harness).
 
-## 12. Canon: making the actor keep his own story (09‑24)
-
-**Question.** Given a role brief and freedom to improvise (`characters/inky-janitor-actor.json`), Inky
-invents details — but a later re-ask ("what time does it go quiet?") got a *different* answer. Does a persistent
-fact ledger fix that?
-
-**Setup.** `exercise/character.sh`, sheet flag `"canon": true`. After each reply a second call (temp 0) extracts
-the concrete facts he stated; they are deduped (word-overlap ≥ 0.6), capped at 60 and saved to a file. Every brief
-carries all canon plus the ≤3 lines sharing a 5-letter word stem with the current question. gemma-4-E2B, temp 0.4.
-Raw: `results/2026-09-24-canon-reask.txt`, `results/2026-09-24-canon-consistency.txt`.
-
-**Result.**
-
-| Test | Outcome |
-|---|---|
-| Persistence across chats (new process, empty rolling memory) | re-ask answered from the file ("three in the morning") ✅ |
-| `/canon`, `/forget` | list / wipe the file ✅ |
-| Dedupe rule (4 unit pairs) | 4/4 ✅ |
-| **Direct re-ask**: ledger of 8 facts incl. "It gets quiet after 2 a.m."; "So what time does it go quiet down here?" | **5/5 answer 2 a.m.** (also 5/5 with the fact repeated in the user turn — no gain, so that option is off by default) |
-| Natural 5-turn chats, canon on vs off (3 runs each) | **inconclusive**: canon 1 consistent / 1 partial drift / 1 no time stated; off 1 / 1 / 1. (An earlier unsaved run looked better, 3/3 vs 1/3; it did not replicate, so it doesn't count.) |
-
-**Why the natural chats don't separate.** (1) The lookup only fires when the re-ask shares a word with a stored
-fact: he said he starts *rounds* at three, the player asked about *quiet*, so nothing matched. (2) The extractor is a 2B
-model and stores filler ("It is lukewarm coffee.", once "Inky has no concrete facts stated."); a junk filter was added.
-(3) Nothing checks a new answer *against* canon — he can still invent a contradicting fact, which is then saved too.
-(4) No baseline for the exact re-ask with the fact only in the rolling window (the ledger *is* the fact source there).
-
-**Verdict.** The mechanism works and covers the reported case (a fact stated earlier, re-asked with a shared word),
-including across chats. It does not make him reliably consistent in free conversation. Next: a semantic match
-(extract topic keywords with the fact) and a contradiction check before saving.
-
-### 12b. v2: topic-word lookup + continuity check (09‑24)
-
-**Changes.** The extractor now also emits 3–6 topic words per fact (synonyms and question words), so a question
-matches on the fact *or* its topic words, weighted by rarity (a word in one fact outranks "night" in three), and a
-"when / what time" question also pulls facts that contain a time. Before a reply is shown, if any relevant fact exists
-it is checked for a contradiction: **clock times by a deterministic rule** (both give a time, the hours differ, they
-share a content word), everything else by a model judge; a conflicting reply is redone once with the fact as a nudge,
-and a reply that still conflicts is shown but not learned. Code moved to `lib/canon.sh`; tests in `tests/canon.sh`.
-
-**Tests** (`results/2026-09-24-canon-tests.txt`, **23/23**): lookup 7/7 including the earlier miss ("silent" → "quiet";
-"drink" → a coffee fact that never says "drink"; "when do you start" → the rounds fact); 9 clock-time cases; paraphrase
-filter; parser (drops fragments, NONE, feelings). **The model judge alone was 10/12** (cleared consistent replies 6/6 but caught
-only 4/6 contradictions — the two misses were different clock times, exactly the reported case), which is why times are
-now a rule; with it, **11/12** (catches 5/6, false alarms 0/6). The remaining miss is a paraphrase with no shared word
-("settle at about six AM" vs "quiet after 2 a.m.").
-
-**Natural chats** (`results/2026-09-24-canon-v2.txt`, 3 runs each, same script as §12): canon on — 2 consistent, 1 with no
-comparable time; off — 1 plausible drift (3 AM → 5 AM), 1 doubtful flag, 1 consistent. **Directionally better, not proven:**
-n = 3, and the continuity check never fired in these runs — the gain came from the lookup putting his own facts in front of
-him. Two side effects: turn 5 was often a near-verbatim copy of turn 1 (consistent, but the repeat guardrail is exact-match
-only), and a paraphrase that spells a time differently ("two in the morning" vs "2 a.m.") is saved as a second fact.
-
-**The retry path** was exercised in a scratch copy with the judge rigged to flag the first reply: he answered again from the
-fact, the reply was tagged `[guardrail: contradiction, retried]` and learned.
-
-**Verdict.** The reported case (a stated time, later re-asked) is now covered three ways — lookup, rule, retry — and the
-mechanics are tested. Free-conversation consistency is improved but small-sample. Open: fuzzy repeat detection so a consistent
-answer isn't a copy; number-word/digit normalisation in the paraphrase filter; a larger A/B.
-
-### 12c. Fuzzy repeat detection (09‑24)
-
-**Question.** With his own facts in front of him (§12), Inky answered a re-ask with a near-verbatim copy of his earlier
-answer. The exact-match guardrail (§4) can't see that. Can a fuzzy check stop the copying without losing the facts?
-
-**Setup.** `lib/repeat.sh` `near_repeat`: a reply is a repeat if a sentence (≥ 5 words) overlaps a sentence of one of his own
-earlier lines by ≥ 0.75 word-set Jaccard, or the whole reply overlaps a whole earlier line by ≥ 0.5. Thresholds were taken from
-12 saved T1/T5 pairs: the 4 clear copies scored 0.89–1.00 per sentence (0.40–0.83 whole); the 8 different answers ≤ 0.50 per
-sentence (≤ 0.49 whole). In the chat loop a repeat is redone once with a "same facts, fresh words" nudge; exact repeats and
-voice-example echoes still fall back to the canned line, but a *similar* retry is kept (a paraphrase that reuses a phrase beats
-"Enough talk for now" as an answer). `INKY_NEAR_REPEAT=off` disables it. Raw: `results/2026-09-24-near-repeat.txt`,
-`results/2026-09-24-repeat-tests.txt`.
-
-**Result.** Unit tests 8/8 (offline; includes the real recycled-opening pair). Live, same 5-turn script as §12, canon on,
-3 runs each: detection **on — T5 distinct in 3/3** (it fired in 2 and each retry produced fresh wording); **off — 2/3 copies**
-(run 2 repeats its first two sentences verbatim). The facts survived the rewording ("start cleaning around three in the morning"
-and "rounds around four AM" reappear in new words).
-
-**Verdict.** It does what it was built for: consistent answers no longer arrive as copies. Caveats: the thresholds come from
-12 pairs and the live check is 3 vs 3 — directional, not proven; it applies to every sheet, and would also have caught the
-original terse-sheet loop ("a sock with an eyelet on its toe… it was a sock…", 0.64 whole-reply overlap); a retry is one more
-model call on the turns where it fires. Still open: a larger A/B (the number-word/digit gap in the paraphrase filter is closed, §12d).
-
-### 12d. Number and time normalisation in the paraphrase filter (09‑25)
-
-**Question.** The canon dedupe treated "after 2 a.m." and "after two in the morning" as different facts. Is there code
-to adopt for paraphrase filtering?
-
-**Setup / decision.** Looked at three routes: our own normaliser; small embedding models served by the llama.cpp already
-installed (`--embedding`; e.g. `ggml-org/gte-small-Q8_0-GGUF`); and Python semantic-dedup libraries (SemHash / Model2Vec).
-Chose the first: the reported case is digits-vs-words, not semantics, and embedding models are weak on numbers (they rate
-"after 2 a.m." ≈ "after 4 a.m."), which would be exactly wrong for a continuity ledger. `lib/canon.sh` now normalises
-number words → digits and clock phrases → `Nam`/`Npm` ("2 a.m.", "2:00 AM", "two in the morning" → `2am`; "one" only before a
-time marker, so "no one" survives) and compares word sets *including* numbers. Two facts are the same only if the word overlap is
-≥ 0.6 **and** their numbers/times are equal. The merge is now one function, `canon_merge`, used by `canon_learn` and the tests
-(the test previously carried its own copy of the rule). Raw: `results/2026-09-25-canon-normalise-tests.txt`.
-
-**Result.** `tests/canon.sh` **31/31 in three consecutive full runs** (27 offline); an earlier run of the same suite scored 29/30 — see the flake below. New merge cases: article swap, `2 a.m.` = `two in the morning` = `2:00 AM`,
-`six in the evening` = `6 p.m.` all merge to one fact; `2` vs `4 a.m.`, `two` vs `four in the morning`, `rack seven` vs
-`rack twelve` and unrelated facts stay separate. **A latent bug came out of it:** the old rule dropped digits from the
-comparison, so a later, *conflicting* fact ("quiet after 4 a.m.") was judged a duplicate of "quiet after 2 a.m." and silently
-discarded; both are now kept. A live chat with a seeded ledger merged the re-extracted 2 a.m. fact instead of duplicating it.
-
-**A flake, and a mistake of mine.** One run failed the model-backed check "no facts invented from a mood-only reply": at temperature 0
-the extractor returned "Inky is fine" that time and nothing on the previous run (output is not fully repeatable even at temp 0).
-The parser now drops a fact that *ends* in a bare mood word ("… is fine/okay/good/well…"). My first version of that filter was too
-greedy and would have discarded real facts ("The coffee is good and strong at night", "Inky is well known on the night shift") —
-caught by a sanity check, anchored to the end of the fact, and both are now must-keep test cases. Judge accuracy is unchanged and
-stable across the three runs: 11/12 (its one miss is a paraphrase with no shared word).
-
-**Verdict.** The reported gap is closed with ~30 lines of jq and no dependency. Not covered, by design: true paraphrases that
-share no words ("wipes down conduits" / "cleans the pipes") — the case where an embedding model would earn its place; measure how
-often that happens in a real ledger first. Also seen: the extractor sometimes saves a behaviour as a fact ("Inky asks about the lights.").
-
 ## Harness bugs found
 
 | Bug | Effect | Fix |
@@ -556,7 +345,6 @@ often that happens in a real ledger first. Also seen: the extractor sometimes sa
 | "not recognized" for `curl`/`systemctl stop` | the most natural first command got no information back | realistic output (`curl: (52) Empty reply from server`) |
 | Scorer `"orphaned"` / `"use"` | credited a backwards diagnosis; `"use"` matched "because" | require PID or an in-use phrase |
 | Space-split `CANDIDATES` | a label with a space broke into two candidates → jq error spam | newline-separated |
-| Third-person fallback line | persona violation | first-person line |
 | Unpinned sampling | temperatures differed by server (0.7–1.0) | `INKY_TEMPERATURE` (default 0.3) for every candidate |
 
 ## Methodology lessons
@@ -572,7 +360,6 @@ often that happens in a real ledger first. Also seen: the extractor sometimes sa
   of spark's v1 looping; the scorer credited a backwards diagnosis.
 - **Q&A quality ≠ agentic follow-through.** Passing the interview predicted
   nothing about finishing the loop.
-- **Instruction text loses to examples** (the-orb's lesson, re-confirmed §4).
 
 ## Open gaps
 
@@ -584,9 +371,8 @@ often that happens in a real ledger first. Also seen: the extractor sometimes sa
 - **3 runs per cell** separates signal from noise better than 1, but it's still small.
 - **The mock only knows one incident.** Anything off-script gets "not recognized",
   which isn't how a real shell behaves; repeating `kill 9911` "succeeds" twice.
-- **spark-x2.5-4B** hasn't been through the character, agent-loop or heartbeat
+- **spark-x2.5-4B** hasn't been through the agent-loop or heartbeat
   tests (1.2 tok/s makes them impractical here).
-- **Tonal shift:** exaggerated per-band examples untried.
 - **Report accuracy:** gemma's `finish_diagnosis` sometimes misstates what it
   did. Untried: have the harness (or Hermes) verify with a health check
   instead of trusting the report.

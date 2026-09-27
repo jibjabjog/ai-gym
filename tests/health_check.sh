@@ -1,14 +1,18 @@
 #!/usr/bin/env bash
-# Verify Inky (local llama.cpp failover model) is up and responding.
+# Verify Inky (the local llama.cpp failover model) is up and responding.
 #
-# Inky is the llama-qwen35-tiny.service systemd --user unit: a llama.cpp
-# server bound to 127.0.0.1:45072, model alias "Inky".
+# Since the 2026-09-24 retirement, "Inky" is gemma-4-E2B served by the
+# llama-router.service systemd --user unit on 127.0.0.1:8080 (the sole local
+# failover; also Hermes' live fallback). The old llama-qwen35-tiny.service on
+# :45072 is gone. This check is read-only (GET /health, GET /v1/models,
+# systemctl is-active), so it is safe to run against the live fallback.
+# Override INKY_PORT / INKY_UNIT to point at any other candidate.
 set -uo pipefail
 
 INKY_HOST="${INKY_HOST:-127.0.0.1}"
-INKY_PORT="${INKY_PORT:-45072}"
+INKY_PORT="${INKY_PORT:-8080}"
 BASE_URL="http://${INKY_HOST}:${INKY_PORT}"
-UNIT="${INKY_UNIT:-llama-qwen35-tiny.service}"
+UNIT="${INKY_UNIT:-llama-router.service}"
 
 fail=0
 

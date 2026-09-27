@@ -2,23 +2,33 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-Inky's Gym: bash test/exercise scripts that evaluate small local LLMs for the
-"Inky" role — Hermes Agent's local fallback model on this CPU-only OCI ARM64 box.
-Results live in `FINDINGS.md`; the front door is `README.md`.
+Inky's Gym: bash scripts that exercise and measure an AI model **for a specific
+role** — health checks, a job interview, throughput, and scored incident drills.
+Built to be role-agnostic (any AI reachable over an HTTP chat endpoint); the current
+tenant is the **"Inky" role** — Hermes Agent's local fallback model on this CPU-only
+OCI ARM64 box. Results live in `FINDINGS.md`; the front door is `README.md`; a browser
+console for the tools is `gui/dashboard.html`.
+
+**Scope guard (2026-09-26 refresh).** Character definition and roleplay *operations* —
+persona sheets, mood dials, the canon ledger, anti-repeat guardrails — were a bash
+prototype of `../the-orb`'s Character Engine and have moved there
+(`experiments/2026-09-26-inky-gym-character-prototype/`). Keep this repo strictly about
+**exercising a model in a role**: connection tooling + tests. If a task drifts toward
+building or operating a *character*, it belongs in the-orb, not here.
 
 ## The host (what's running where)
 
 | Service | Port | Model | Notes |
 |---|---|---|---|
-| `llama-router.service` (user) | 8080 | gemma-4-E2B (+ presets) | **Hermes' live `fallback_model` since 2026-09-18 — enabled at boot, never stop it.** gemma's settings are pinned in `~/llama-presets.ini`: `temp = 0.3`, `reasoning = off`, `load-on-startup = true`, **`parallel = 1`**. The unit carries **`--timeout 3600`** (default 600 s cancels any long prefill) |
-| `llama-qwen35-tiny.service` (user) | 45072 | Qwen3.5-0.8B, alias `Inky` | the previous fallback; always on — Hermes' auxiliary tasks and the `local-llama-ping` cron still use it |
+| `llama-router.service` (user) | 8080 | gemma-4-E2B, alias `inky` | **Hermes' live `fallback_model` since 2026-09-18 — enabled at boot, never stop it.** Since 2026-09-25 it serves a *single* preset (`--models-max 1`, no autoload): `[inky]` = gemma-4-E2B, pinned in `~/llama-presets.ini` (`temp = 0.3`, `reasoning = off`, `load-on-startup = true`, **`parallel = 1`**). The unit carries **`--timeout 3600`** (default 600 s cancels any long prefill) |
+| ~~`llama-qwen35-tiny.service` (:45072)~~ | — | — | **Retired 2026-09-24.** The qwen35-* models and this unit are gone; the name **"Inky" now belongs to gemma-4-E2B** on the router above (the gym's own verdict, acted on). Nothing listens on :45072. The 0.8B results in FINDINGS/scorecard are kept as history. ⚠ `tests/health_check.sh` (default `INKY_UNIT` / `INKY_PORT=45072`) and the `INKY_*` chat defaults still point here and now fail — repoint or treat as history-only before relying on them. |
 | `ollama.service` (system, v0.34.1) | 11434 | `spark-x2.5`, `SparkLLM/Spark-X2.5-4B` | loads on demand, unloads when idle |
 | `hermes-gateway.service` (user) | — | — | the live agent — never restart or reconfigure it |
 
 - **RAM (23 GB total, ~7–11 GB free):** gemma ≈ 5.8 GB, spark-4B ≈ 8.4 GB,
   spark-1.7B ≈ 1.5 GB. gemma stays loaded once Hermes has used it, so **don't load
   spark-4B at all** — both together would starve the live fallback. `ollama stop <model>` to unload.
-- `~/llama-presets.ini`'s `qwen35-fast` preset points at a missing `.gguf` — pre-existing, not ours.
+- `~/llama-presets.ini` is now a single `[inky]` preset (gemma-4-E2B); the old `qwen35-*` presets were removed in the 2026-09-24 retirement.
 - **Keeping the fallback alive and warm** (`~/.hermes/scripts/`, both silent unless something breaks):
   `fallback_guard.sh` runs from cron every 5 min (`hermes cron` job `fallback-guard`, delivers to Telegram):
   starts the router if down, proves gemma with a real completion, is busy-aware (a working model is never
@@ -41,11 +51,9 @@ Results live in `FINDINGS.md`; the front door is `README.md`.
 ```
 lib/backend.sh           llm_chat / llm_message / llm_tool_calls / candidate plumbing — both API shapes
 lib/scenario_port8080.sh the simulated incident, its scorer, and the shared tool-loop runner
-lib/repeat.sh           near_repeat: fuzzy "did he just re-use a sentence?" check for the guardrail (FINDINGS §12c)
-lib/canon.sh            a character's persistent fact ledger: lookup, extract, dedupe, contradiction check (FINDINGS §12)
-tests/                   health_check.sh, tokens_per_second.sh (Inky only), bench.sh (any candidate), hermes_failover.sh (real Hermes -> gemma), canon.sh (ledger unit tests), repeat.sh (repeat-detector unit tests)
-exercise/                chat, explore, character, interview, agent_loop, heartbeat
-characters/*.json        character sheets (persona, mood bands, per-band voice examples)
+tests/                   health_check.sh, tokens_per_second.sh (Inky only), bench.sh (any candidate), hermes_failover.sh (real Hermes -> gemma)
+exercise/                chat, explore, interview, agent_loop, heartbeat
+gui/dashboard.html       single-file browser console: connect, chat, health, explore, bench, tool-probe, response-time/tok-s graphs
 results/                 raw transcripts from dated runs — cite these from FINDINGS.md
 ```
 

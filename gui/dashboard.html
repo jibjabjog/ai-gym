@@ -1,0 +1,722 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inky's Gym — Workout Console</title>
+<!--
+  Inky's Gym workout GUI — a single self-contained page. No server, no build.
+  It talks to model endpoints directly, the same two shapes lib/backend.sh uses:
+    openai  -> POST {base}/v1/chat/completions   (llama.cpp)
+    ollama  -> POST {base}/api/chat              (native; honours the thinking toggle)
+  where {base} = http://{host}:{port}.
+
+  CONSTRAINTS (on purpose, see README):
+   - CORS (tested 2026-09-26): llama.cpp (:8080) returns Access-Control-Allow-Origin:
+     null, so it works straight from file://. ollama (:11434) refuses a file:// (null)
+     origin with 403 but allows any http://localhost origin — so to use ollama
+     candidates, serve this page from localhost (e.g. `python3 -m http.server` in the
+     repo root, then http://localhost:8000/gui/dashboard.html; tunnel if remote). No
+     OLLAMA_ORIGINS change needed.
+   - It CANNOT auto-read the sibling results/ folder, so run history lives in
+     localStorage and old transcripts are brought in with the file picker on the
+     Graphs panel.
+   - Port 8080 is Hermes' LIVE fallback (gemma). Health/chat/bench send real load.
+     Bench runs strictly one request at a time and never stacks — don't work around that.
+   - The heavy scored role tests (interview / agent_loop / heartbeat) keep their
+     scorers in bash; this page connects and measures, it does not re-score them.
+
+  Colours are the dataviz skill's validated default palette (see references/palette.md).
+-->
+<style>
+  :root {
+    color-scheme: light;
+    /* chrome & ink (dataviz palette) */
+    --plane:      #f9f9f7;
+    --surface:    #fcfcfb;
+    --surface-2:  #f2f1ec;
+    --ink:        #0b0b0b;
+    --ink-2:      #52514e;
+    --muted:      #898781;
+    --grid:       #e1e0d9;
+    --axis:       #c3c2b7;
+    --border:     rgba(11,11,11,0.10);
+    /* categorical series slots */
+    --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100;
+    --s5: #e87ba4; --s6: #008300; --s7: #4a3aa7; --s8: #e34948;
+    /* status (fixed, never themed) */
+    --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #d03b3b;
+    --good-ink: #006300;
+    --radius: 10px;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --plane:      #0d0d0d;
+      --surface:    #1a1a19;
+      --surface-2:  #232320;
+      --ink:        #ffffff;
+      --ink-2:      #c3c2b7;
+      --muted:      #898781;
+      --grid:       #2c2c2a;
+      --axis:       #383835;
+      --border:     rgba(255,255,255,0.10);
+      --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+      --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
+      --good-ink: #0ca30c;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --plane:      #0d0d0d;
+    --surface:    #1a1a19;
+    --surface-2:  #232320;
+    --ink:        #ffffff;
+    --ink-2:      #c3c2b7;
+    --muted:      #898781;
+    --grid:       #2c2c2a;
+    --axis:       #383835;
+    --border:     rgba(255,255,255,0.10);
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+    --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
+    --good-ink: #0ca30c;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--plane);
+    color: var(--ink);
+    font-family: var(--sans);
+    line-height: 1.45;
+    font-size: 15px;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--s1); }
+  h1, h2, h3 { line-height: 1.2; margin: 0 0 .4em; }
+  h1 { font-size: 1.25rem; }
+  h2 { font-size: 1rem; letter-spacing: .01em; }
+  h3 { font-size: .82rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  p { margin: .3em 0; }
+  code, .mono { font-family: var(--mono); }
+
+  header.top {
+    position: sticky; top: 0; z-index: 20;
+    display: flex; flex-wrap: wrap; align-items: center; gap: .75rem;
+    padding: .7rem 16px;
+    background: color-mix(in srgb, var(--plane) 88%, transparent);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border);
+  }
+  header.top .title { font-weight: 700; font-size: 1.05rem; margin-right: auto; }
+  header.top .title span { color: var(--muted); font-weight: 400; font-size: .85rem; }
+
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 16px; }
+  .grid { display: grid; gap: 16px; }
+  @media (min-width: 780px) { .grid.two { grid-template-columns: 1fr 1fr; } }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+  }
+  .card > h2 { display: flex; align-items: center; gap: .5rem; }
+  .card .hint { color: var(--muted); font-size: .82rem; margin: 0 0 .6rem; }
+
+  label.fld { display: block; font-size: .78rem; color: var(--ink-2); margin: .5rem 0 .15rem; }
+  input, select, textarea, button {
+    font-family: inherit; font-size: .9rem; color: var(--ink);
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: 8px; padding: .45rem .55rem;
+  }
+  input, select, textarea { width: 100%; }
+  textarea { resize: vertical; font-family: var(--mono); font-size: .82rem; line-height: 1.4; }
+  .row { display: flex; gap: .5rem; flex-wrap: wrap; align-items: flex-end; }
+  .row > * { flex: 1 1 auto; }
+  .row.tight > * { flex: 0 0 auto; }
+
+  button {
+    cursor: pointer; background: var(--s1); color: #fff; border: none; font-weight: 600;
+    padding: .5rem .9rem; white-space: nowrap;
+  }
+  button:hover { filter: brightness(1.06); }
+  button.ghost { background: var(--surface-2); color: var(--ink); border: 1px solid var(--border); }
+  button.sm { padding: .3rem .55rem; font-size: .8rem; }
+  button:disabled { opacity: .5; cursor: progress; }
+
+  .pill {
+    display: inline-flex; align-items: center; gap: .35rem;
+    font-size: .74rem; font-weight: 600; padding: .12rem .5rem; border-radius: 999px;
+    background: var(--surface-2); border: 1px solid var(--border); color: var(--ink-2);
+  }
+  .dot { width: .6rem; height: .6rem; border-radius: 50%; background: var(--muted); flex: 0 0 auto; }
+  .dot.good { background: var(--good); } .dot.bad { background: var(--critical); }
+  .dot.wait { background: var(--warning); }
+  .warn8080 { color: var(--serious); font-size: .78rem; }
+
+  /* candidate rows */
+  table.cand { width: 100%; border-collapse: collapse; font-size: .84rem; }
+  table.cand th { text-align: left; color: var(--muted); font-weight: 600; font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; padding: .2rem .35rem; }
+  table.cand td { padding: .2rem .35rem; border-top: 1px solid var(--border); vertical-align: middle; }
+  table.cand td input, table.cand td select { padding: .3rem .4rem; font-size: .82rem; }
+  table.cand tr.active td { background: color-mix(in srgb, var(--s1) 10%, transparent); }
+  .swatch { width: .8rem; height: .8rem; border-radius: 3px; display: inline-block; vertical-align: middle; }
+
+  .transcript { max-height: 340px; overflow-y: auto; display: flex; flex-direction: column; gap: .5rem; padding: .2rem; }
+  .msg { padding: .5rem .7rem; border-radius: 10px; max-width: 88%; white-space: pre-wrap; word-wrap: break-word; font-size: .88rem; }
+  .msg.user { align-self: flex-end; background: var(--s1); color: #fff; }
+  .msg.assistant { align-self: flex-start; background: var(--surface-2); border: 1px solid var(--border); }
+  .msg.think { align-self: flex-start; background: transparent; border: 1px dashed var(--axis); color: var(--muted); font-style: italic; font-size: .82rem; }
+  .msg .meta { display: block; font-size: .7rem; opacity: .8; margin-top: .3rem; }
+
+  pre.out { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: .6rem; overflow-x: auto; font-family: var(--mono); font-size: .78rem; margin: .4rem 0 0; max-height: 260px; }
+
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; }
+  .tile { background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: .6rem .7rem; }
+  .tile .k { font-size: .72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+  .tile .v { font-size: 1.5rem; font-weight: 700; }
+  .tile .u { font-size: .78rem; color: var(--ink-2); font-weight: 400; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: .6rem 1rem; font-size: .78rem; color: var(--ink-2); margin: .3rem 0 .1rem; }
+  .legend .item { display: inline-flex; align-items: center; gap: .35rem; }
+  svg.chart { width: 100%; height: auto; display: block; }
+  svg.chart text { font-family: var(--sans); fill: var(--muted); }
+  svg.chart .axis-line { stroke: var(--axis); stroke-width: 1; }
+  svg.chart .grid-line { stroke: var(--grid); stroke-width: 1; }
+  svg.chart .dot-mark { stroke: var(--surface); stroke-width: 2; }
+
+  table.runs { width: 100%; border-collapse: collapse; font-size: .8rem; font-variant-numeric: tabular-nums; }
+  table.runs th, table.runs td { text-align: right; padding: .25rem .4rem; border-top: 1px solid var(--border); }
+  table.runs th:first-child, table.runs td:first-child,
+  table.runs th:nth-child(2), table.runs td:nth-child(2) { text-align: left; }
+  table.runs th { color: var(--muted); font-size: .7rem; text-transform: uppercase; letter-spacing: .05em; border: none; }
+
+  .muted { color: var(--muted); }
+  .footer { color: var(--muted); font-size: .78rem; padding: 8px 0 40px; text-align: center; }
+  .err { color: var(--critical); font-size: .82rem; }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="title">Inky's Gym <span>· workout console</span></div>
+  <span id="activeName" class="pill"><span class="dot"></span> no candidate</span>
+  <button id="themeBtn" class="ghost sm" title="Cycle theme">◐ theme</button>
+</header>
+
+<div class="wrap grid">
+
+  <!-- CANDIDATES -->
+  <section class="card">
+    <h2>Candidates</h2>
+    <p class="hint">Endpoints to exercise — the gym's <code>label|backend|host|port|model</code>. Click a row to make it active. Saved in this browser.</p>
+    <table class="cand">
+      <thead><tr><th></th><th>Label</th><th>Backend</th><th>Host</th><th>Port</th><th>Model</th><th></th></tr></thead>
+      <tbody id="candRows"></tbody>
+    </table>
+    <div class="row tight" style="margin-top:.6rem">
+      <button id="addCand" class="ghost sm">+ add candidate</button>
+      <button id="resetCand" class="ghost sm">reset to defaults</button>
+    </div>
+    <p class="warn8080" style="margin-top:.5rem">⚠ Port 8080 is Hermes' <b>live fallback</b> (gemma). Health, chat and bench send real load — bench runs one request at a time and never stacks.</p>
+  </section>
+
+  <div class="grid two">
+    <!-- HEALTH -->
+    <section class="card">
+      <h2>Health</h2>
+      <p class="hint">Is the active endpoint up, and how fast does it answer? <code>/health</code> (llama.cpp) or <code>/api/tags</code> (ollama).</p>
+      <button id="healthBtn">Check health</button>
+      <div id="healthOut" style="margin-top:.6rem"></div>
+    </section>
+
+    <!-- EXPLORE -->
+    <section class="card">
+      <h2>Explore</h2>
+      <p class="hint">The server's spec: context window, slots, sampling defaults, template.</p>
+      <button id="exploreBtn">Explore server</button>
+      <pre class="out" id="exploreOut" hidden></pre>
+    </section>
+  </div>
+
+  <!-- CHAT -->
+  <section class="card">
+    <h2>Chat</h2>
+    <p class="hint">Talk to the active candidate. Reasoning is shown when the visible reply is empty (small models can burn the budget thinking).</p>
+    <label class="fld">System prompt (optional)</label>
+    <textarea id="sysPrompt" rows="2" placeholder="e.g. You are Inky, a terse night-shift sysadmin."></textarea>
+    <div class="row" style="margin-top:.5rem">
+      <div style="flex:0 0 auto"><label class="fld">Temp</label><input id="temp" type="number" step="0.1" min="0" max="2" value="0.3" style="width:5rem"></div>
+      <div style="flex:0 0 auto"><label class="fld">Max tokens</label><input id="maxTok" type="number" min="1" value="512" style="width:6.5rem"></div>
+      <div style="flex:0 0 auto"><label class="fld">Thinking</label>
+        <select id="think" style="width:6rem"><option value="0">off</option><option value="1">on</option></select></div>
+      <div style="flex:0 0 auto; align-self:flex-end"><button id="clearChat" class="ghost sm">clear</button></div>
+    </div>
+    <div class="transcript" id="transcript" style="margin-top:.6rem"></div>
+    <div class="row" style="margin-top:.5rem">
+      <input id="chatIn" placeholder="Type a message…" style="flex:1 1 auto">
+      <button id="sendBtn" style="flex:0 0 auto">Send</button>
+    </div>
+    <div id="chatErr" class="err"></div>
+  </section>
+
+  <div class="grid two">
+    <!-- BENCH -->
+    <section class="card">
+      <h2>Bench</h2>
+      <p class="hint">Warmup + N identical runs, one at a time. Reports tokens/s and total latency (server timings when available, else wall clock).</p>
+      <label class="fld">Prompt</label>
+      <textarea id="benchPrompt" rows="2">List three common causes of a Linux service failing to bind a port.</textarea>
+      <div class="row" style="margin-top:.5rem">
+        <div style="flex:0 0 auto"><label class="fld">Runs</label><input id="benchRuns" type="number" min="1" max="20" value="3" style="width:5rem"></div>
+        <div style="flex:0 0 auto"><label class="fld">Max tokens</label><input id="benchMax" type="number" min="1" value="150" style="width:6.5rem"></div>
+        <div style="flex:0 0 auto; align-self:flex-end"><button id="benchBtn">Run bench</button></div>
+      </div>
+      <div id="benchStatus" class="hint" style="margin-top:.5rem"></div>
+      <div id="benchTiles" class="tiles" style="margin-top:.5rem"></div>
+    </section>
+
+    <!-- TOOL PROBE -->
+    <section class="card">
+      <h2>Tool probe</h2>
+      <p class="hint">Send a tool schema + a prompt that should trigger it; see whether (and how) the model calls it. Args are normalised (llama.cpp string ↔ ollama object).</p>
+      <label class="fld">Tool schema (JSON)</label>
+      <textarea id="toolSchema" rows="6"></textarea>
+      <label class="fld">Prompt</label>
+      <input id="toolPrompt" value="What's the weather in Dublin right now?">
+      <button id="toolBtn" style="margin-top:.5rem">Probe tools</button>
+      <pre class="out" id="toolOut" hidden></pre>
+    </section>
+  </div>
+
+  <!-- GRAPHS -->
+  <section class="card">
+    <h2>Graphs &amp; stats</h2>
+    <p class="hint">Every chat, bench and tool run this dashboard performs is logged here (in this browser). Colour = candidate.</p>
+    <div id="statTiles" class="tiles"></div>
+    <div class="grid two" style="margin-top:14px">
+      <div><h3>Total latency by run (ms)</h3><div id="latChart"></div></div>
+      <div><h3>Generation speed by run (tok/s)</h3><div id="tokChart"></div></div>
+    </div>
+    <div style="margin-top:14px"><h3>Average tok/s by candidate</h3><div id="barChart"></div></div>
+    <div id="chartLegend" class="legend"></div>
+    <details style="margin-top:12px"><summary class="muted" style="cursor:pointer">Recent runs (table view)</summary>
+      <div style="overflow-x:auto"><table class="runs" id="runsTable"></table></div>
+    </details>
+    <div class="row tight" style="margin-top:.8rem">
+      <button id="clearRuns" class="ghost sm">clear history</button>
+      <button id="exportRuns" class="ghost sm">export JSON</button>
+      <label class="ghost sm" style="cursor:pointer; display:inline-flex; align-items:center; padding:.3rem .55rem; border-radius:8px; border:1px solid var(--border); background:var(--surface-2)">
+        import results file… <input id="importFile" type="file" accept=".txt,.json,.log" hidden>
+      </label>
+    </div>
+    <pre class="out" id="importOut" hidden></pre>
+  </section>
+
+  <div class="footer">
+    Inky's Gym · a role-agnostic AI exercise ground. Scored role tests live in <code>tests/</code> &amp; <code>exercise/</code>.
+    Talks to <code>/v1/chat/completions</code> and <code>/api/chat</code> directly.
+  </div>
+</div>
+
+<script>
+"use strict";
+// ---------- storage helpers (all wrapped; file:// / private mode can throw) ----------
+const LS = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
+};
+const $ = (id) => document.getElementById(id);
+const SERIES = ['--s1','--s2','--s3','--s4','--s5','--s6','--s7','--s8'];
+const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+// ---------- state ----------
+const DEFAULT_CANDIDATES = [
+  { label: 'Inky Qwen3.5-0.8B', backend: 'openai', host: '127.0.0.1', port: '45072', model: 'Inky' },
+  { label: 'gemma-4-E2B (LIVE fallback)', backend: 'openai', host: '127.0.0.1', port: '8080', model: 'google/gemma-4-E2B-it-qat-q4_0-gguf:IT' },
+  { label: 'spark-x2.5 1.7B', backend: 'ollama', host: '127.0.0.1', port: '11434', model: 'spark-x2.5' },
+];
+let candidates = LS.get('inkygym.candidates', null) || structuredClone(DEFAULT_CANDIDATES);
+let activeIdx = LS.get('inkygym.active', 0);
+let runs = LS.get('inkygym.runs', []);
+let chatMsgs = [];   // in-memory transcript for the active session
+
+const DEFAULT_TOOL = {
+  type: 'function',
+  function: {
+    name: 'get_weather',
+    description: 'Get the current weather for a location.',
+    parameters: {
+      type: 'object',
+      properties: { location: { type: 'string', description: 'City name' } },
+      required: ['location']
+    }
+  }
+};
+
+function saveCandidates() { LS.set('inkygym.candidates', candidates); }
+function saveRuns() { LS.set('inkygym.runs', runs.slice(-500)); }
+function activeCand() { return candidates[activeIdx] || candidates[0]; }
+function baseUrl(c) { return `http://${c.host}:${c.port}`; }
+function candColor(idx) { return cssVar(SERIES[idx % SERIES.length]); }
+
+// ---------- theme ----------
+function applyTheme() {
+  const t = LS.get('inkygym.theme', 'auto');
+  if (t === 'auto') document.documentElement.removeAttribute('data-theme');
+  else document.documentElement.setAttribute('data-theme', t);
+  $('themeBtn').textContent = { auto: '◐ auto', light: '☀ light', dark: '☾ dark' }[t];
+}
+$('themeBtn').onclick = () => {
+  const order = ['auto', 'light', 'dark'];
+  const cur = LS.get('inkygym.theme', 'auto');
+  LS.set('inkygym.theme', order[(order.indexOf(cur) + 1) % 3]);
+  applyTheme(); renderCharts();
+};
+
+// ================= BACKEND (mirrors lib/backend.sh) =================
+function sampling(backend, { maxTokens, temp } = {}) {
+  const o = {};
+  if (temp !== '' && temp != null && !Number.isNaN(+temp)) o.temperature = +temp;
+  if (maxTokens) o[backend === 'ollama' ? 'num_predict' : 'max_tokens'] = +maxTokens;
+  return o;
+}
+// Returns { message, content, reasoning, toolCalls, latencyMs, tokPerSec, tokens, raw }
+async function llmChat(c, messages, { tools = null, think = false, maxTokens, temp } = {}) {
+  const t0 = performance.now();
+  let res, data;
+  if (c.backend === 'ollama') {
+    const body = { model: c.model, messages, think: !!think, stream: false, options: sampling('ollama', { maxTokens, temp }) };
+    if (tools) body.tools = tools;
+    res = await fetch(`${baseUrl(c)}/api/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    data = await res.json();
+  } else {
+    const body = Object.assign({ model: c.model, messages, chat_template_kwargs: { enable_thinking: !!think } }, sampling('openai', { maxTokens, temp }));
+    if (tools) body.tools = tools;
+    res = await fetch(`${baseUrl(c)}/v1/chat/completions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    data = await res.json();
+  }
+  const latencyMs = performance.now() - t0;
+  if (data.error) throw new Error(typeof data.error === 'string' ? data.error : (data.error.message || JSON.stringify(data.error)));
+
+  let message, content, reasoning, rawCalls, tokens, tokPerSec;
+  if (c.backend === 'ollama') {
+    message = data.message || {};
+    content = message.content || '';
+    reasoning = message.thinking || '';
+    rawCalls = message.tool_calls || [];
+    tokens = data.eval_count || 0;
+    if (data.eval_count && data.eval_duration) tokPerSec = data.eval_count / (data.eval_duration / 1e9);
+  } else {
+    message = (data.choices && data.choices[0] && data.choices[0].message) || {};
+    content = message.content || '';
+    reasoning = message.reasoning_content || message.thinking || '';
+    rawCalls = message.tool_calls || [];
+    tokens = (data.usage && data.usage.completion_tokens) || 0;
+    if (data.timings && data.timings.predicted_per_second) tokPerSec = data.timings.predicted_per_second;
+  }
+  if (tokPerSec == null && tokens) tokPerSec = tokens / (latencyMs / 1000);
+  // normalise tool calls: [{id,name,args}] with args always an object
+  const toolCalls = rawCalls.map(tc => {
+    let a = tc.function ? tc.function.arguments : tc.arguments;
+    if (typeof a === 'string') { try { a = JSON.parse(a); } catch { a = { _raw: a }; } }
+    return { id: tc.id || '', name: (tc.function && tc.function.name) || tc.name || '', args: a || {} };
+  });
+  return { message, content, reasoning, toolCalls, latencyMs, tokPerSec: tokPerSec || 0, tokens, raw: data };
+}
+
+async function health(c) {
+  const t0 = performance.now();
+  const path = c.backend === 'ollama' ? '/api/tags' : '/health';
+  const res = await fetch(baseUrl(c) + path);
+  const ms = performance.now() - t0;
+  return { ok: res.ok, status: res.status, ms };
+}
+
+async function explore(c) {
+  const out = {};
+  try {
+    if (c.backend === 'ollama') {
+      out['/api/tags'] = await (await fetch(baseUrl(c) + '/api/tags')).json();
+      out['/api/show'] = await (await fetch(baseUrl(c) + '/api/show', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: c.model }) })).json();
+    } else {
+      out['/props'] = await (await fetch(baseUrl(c) + '/props')).json();
+      out['/v1/models'] = await (await fetch(baseUrl(c) + '/v1/models')).json();
+    }
+  } catch (e) { out.error = String(e); }
+  return out;
+}
+
+// ---------- run log ----------
+function logRun(kind, r, ok = true) {
+  runs.push({ ts: Date.now(), cand: activeCand().label, candIdx: activeIdx, kind,
+    latencyMs: Math.round(r.latencyMs || 0), tokPerSec: +(r.tokPerSec || 0).toFixed(1), tokens: r.tokens || 0, ok });
+  saveRuns(); renderCharts();
+}
+
+// ================= CANDIDATES UI =================
+function renderCandidates() {
+  const tb = $('candRows'); tb.innerHTML = '';
+  candidates.forEach((c, i) => {
+    const tr = document.createElement('tr');
+    if (i === activeIdx) tr.className = 'active';
+    tr.innerHTML = `
+      <td><span class="swatch" style="background:${candColor(i)}"></span></td>
+      <td><input data-f="label" value="${escapeAttr(c.label)}"></td>
+      <td><select data-f="backend"><option value="openai"${c.backend==='openai'?' selected':''}>openai</option><option value="ollama"${c.backend==='ollama'?' selected':''}>ollama</option></select></td>
+      <td><input data-f="host" value="${escapeAttr(c.host)}" style="width:8rem"></td>
+      <td><input data-f="port" value="${escapeAttr(c.port)}" style="width:5rem"></td>
+      <td><input data-f="model" value="${escapeAttr(c.model)}"></td>
+      <td><button class="ghost sm" data-del="${i}">✕</button></td>`;
+    tr.querySelectorAll('[data-f]').forEach(el => {
+      el.addEventListener('change', () => { c[el.dataset.f] = el.value; saveCandidates(); renderCandidates(); updateActiveBadge(); });
+      el.addEventListener('click', (e) => e.stopPropagation());
+    });
+    tr.querySelector('[data-del]').addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (candidates.length <= 1) return;
+      candidates.splice(i, 1);
+      if (activeIdx >= candidates.length) activeIdx = candidates.length - 1;
+      saveCandidates(); LS.set('inkygym.active', activeIdx); renderCandidates(); updateActiveBadge();
+    });
+    tr.addEventListener('click', () => { activeIdx = i; LS.set('inkygym.active', i); renderCandidates(); updateActiveBadge(); });
+    tb.appendChild(tr);
+  });
+}
+$('addCand').onclick = () => { candidates.push({ label: 'new candidate', backend: 'openai', host: '127.0.0.1', port: '8080', model: '' }); saveCandidates(); renderCandidates(); };
+$('resetCand').onclick = () => { candidates = structuredClone(DEFAULT_CANDIDATES); activeIdx = 0; saveCandidates(); LS.set('inkygym.active', 0); renderCandidates(); updateActiveBadge(); };
+
+function updateActiveBadge() {
+  const c = activeCand();
+  $('activeName').innerHTML = `<span class="swatch" style="background:${candColor(activeIdx)}"></span> ${escapeHtml(c.label)} <span class="muted">· ${c.backend} · :${c.port}</span>`;
+}
+function escapeHtml(s) { return String(s).replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m])); }
+function escapeAttr(s) { return String(s).replace(/"/g, '&quot;'); }
+
+// ================= HEALTH =================
+$('healthBtn').onclick = async () => {
+  const c = activeCand(); const out = $('healthOut');
+  out.innerHTML = `<span class="pill"><span class="dot wait"></span> checking ${escapeHtml(c.label)}…</span>`;
+  try {
+    const h = await health(c);
+    out.innerHTML = `<span class="pill"><span class="dot ${h.ok ? 'good' : 'bad'}"></span> ${h.ok ? 'UP' : 'HTTP ' + h.status}</span> <span class="muted">${Math.round(h.ms)} ms · ${baseUrl(c)}${c.backend==='ollama'?'/api/tags':'/health'}</span>`;
+  } catch (e) {
+    out.innerHTML = `<span class="pill"><span class="dot bad"></span> unreachable</span> <span class="err">${escapeHtml(String(e))}</span><br><span class="muted">If the server is up, this is usually CORS — see the file header.</span>`;
+  }
+};
+
+// ================= EXPLORE =================
+$('exploreBtn').onclick = async () => {
+  const c = activeCand(); const out = $('exploreOut');
+  out.hidden = false; out.textContent = 'exploring…';
+  const data = await explore(c);
+  out.textContent = JSON.stringify(data, null, 2);
+};
+
+// ================= CHAT =================
+function renderTranscript() {
+  const t = $('transcript'); t.innerHTML = '';
+  chatMsgs.forEach(m => {
+    if (m.role === 'system') return;
+    const div = document.createElement('div');
+    div.className = 'msg ' + (m.role === 'assistant' ? 'assistant' : 'user');
+    div.textContent = m.content;
+    if (m.meta) { const s = document.createElement('span'); s.className = 'meta'; s.textContent = m.meta; div.appendChild(s); }
+    t.appendChild(div);
+    if (m.reasoning) {
+      const r = document.createElement('div'); r.className = 'msg think'; r.textContent = '🤔 ' + m.reasoning; t.appendChild(r);
+    }
+  });
+  t.scrollTop = t.scrollHeight;
+}
+$('clearChat').onclick = () => { chatMsgs = []; renderTranscript(); $('chatErr').textContent = ''; };
+$('chatIn').addEventListener('keydown', e => { if (e.key === 'Enter') $('sendBtn').click(); });
+$('sendBtn').onclick = async () => {
+  const c = activeCand(); const text = $('chatIn').value.trim();
+  if (!text) return;
+  $('chatErr').textContent = '';
+  const sys = $('sysPrompt').value.trim();
+  const wire = [];
+  if (sys) wire.push({ role: 'system', content: sys });
+  chatMsgs.push({ role: 'user', content: text });
+  chatMsgs.filter(m => m.role !== 'system').forEach(m => wire.push({ role: m.role, content: m.content }));
+  $('chatIn').value = ''; renderTranscript();
+  const btn = $('sendBtn'); btn.disabled = true; btn.textContent = '…';
+  try {
+    const r = await llmChat(c, wire, { think: $('think').value === '1', maxTokens: $('maxTok').value, temp: $('temp').value });
+    const shown = r.content || (r.reasoning ? '(no reply — only reasoning)' : '(empty response)');
+    chatMsgs.push({ role: 'assistant', content: shown, reasoning: r.content ? '' : r.reasoning,
+      meta: `${Math.round(r.latencyMs)} ms · ${r.tokPerSec ? r.tokPerSec.toFixed(1) + ' tok/s' : ''}${r.toolCalls.length ? ' · called ' + r.toolCalls.map(t=>t.name).join(', ') : ''}` });
+    renderTranscript(); logRun('chat', r, true);
+  } catch (e) {
+    $('chatErr').textContent = String(e);
+    logRun('chat', { latencyMs: 0 }, false);
+  } finally { btn.disabled = false; btn.textContent = 'Send'; }
+};
+
+// ================= BENCH (sequential — never stacks) =================
+$('benchBtn').onclick = async () => {
+  const c = activeCand(); const n = Math.max(1, Math.min(20, +$('benchRuns').value || 3));
+  const prompt = $('benchPrompt').value; const maxTokens = +$('benchMax').value || 150;
+  const btn = $('benchBtn'); btn.disabled = true;
+  const st = $('benchStatus'); const msgs = [{ role: 'user', content: prompt }];
+  const speeds = [], lats = [];
+  try {
+    st.textContent = 'warmup…';
+    await llmChat(c, msgs, { maxTokens, temp: 0 });
+    for (let i = 0; i < n; i++) {
+      st.textContent = `run ${i + 1} / ${n}…`;
+      const r = await llmChat(c, msgs, { maxTokens, temp: 0 });
+      speeds.push(r.tokPerSec); lats.push(r.latencyMs); logRun('bench', r, true);
+    }
+    const avg = a => a.reduce((x, y) => x + y, 0) / a.length;
+    $('benchTiles').innerHTML = tile('avg speed', avg(speeds).toFixed(1), 'tok/s')
+      + tile('min / max', `${Math.min(...speeds).toFixed(1)} / ${Math.max(...speeds).toFixed(1)}`, 'tok/s')
+      + tile('avg latency', Math.round(avg(lats)), 'ms')
+      + tile('runs', n, `× ${maxTokens} tok`);
+    st.textContent = `done — ${c.label}`;
+  } catch (e) {
+    st.innerHTML = `<span class="err">${escapeHtml(String(e))}</span>`;
+    logRun('bench', { latencyMs: 0 }, false);
+  } finally { btn.disabled = false; }
+};
+function tile(k, v, u) { return `<div class="tile"><div class="k">${k}</div><div class="v">${v} <span class="u">${u || ''}</span></div></div>`; }
+
+// ================= TOOL PROBE =================
+$('toolSchema').value = JSON.stringify(DEFAULT_TOOL, null, 2);
+$('toolBtn').onclick = async () => {
+  const c = activeCand(); const out = $('toolOut'); out.hidden = false; out.textContent = 'probing…';
+  let tool;
+  try { tool = JSON.parse($('toolSchema').value); } catch (e) { out.textContent = 'Bad tool JSON: ' + e; return; }
+  try {
+    const r = await llmChat(c, [{ role: 'user', content: $('toolPrompt').value }], { tools: [tool], maxTokens: 200, temp: 0 });
+    logRun('tool', r, true);
+    if (r.toolCalls.length) {
+      out.textContent = `✅ ${r.toolCalls.length} tool call(s), args normalised to objects:\n\n` + JSON.stringify(r.toolCalls, null, 2);
+    } else {
+      out.textContent = `⚠ No tool call. The model replied with prose instead:\n\n${r.content || r.reasoning || '(empty)'}`;
+    }
+  } catch (e) { out.textContent = String(e); logRun('tool', { latencyMs: 0 }, false); }
+};
+
+// ================= CHARTS (inline SVG, validated palette) =================
+const SVGNS = 'http://www.w3.org/2000/svg';
+function el(tag, attrs, txt) {
+  const e = document.createElementNS(SVGNS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (txt != null) e.textContent = txt;
+  return e;
+}
+function lineChart(mount, series, { yLabel } = {}) {
+  mount.innerHTML = '';
+  const W = 380, H = 190, P = { t: 12, r: 12, b: 26, l: 40 };
+  const svg = el('svg', { class: 'chart', viewBox: `0 0 ${W} ${H}`, role: 'img' });
+  const pts = series.flatMap(s => s.points);
+  if (!pts.length) { mount.appendChild(placeholder()); return; }
+  const maxX = Math.max(...pts.map(p => p.x), 1);
+  const maxY = Math.max(...pts.map(p => p.y), 1) * 1.1;
+  const X = x => P.l + (x / maxX) * (W - P.l - P.r);
+  const Y = y => H - P.b - (y / maxY) * (H - P.t - P.b);
+  // gridlines + y ticks
+  for (let i = 0; i <= 4; i++) {
+    const yv = (maxY / 4) * i, yy = Y(yv);
+    svg.appendChild(el('line', { class: 'grid-line', x1: P.l, y1: yy, x2: W - P.r, y2: yy }));
+    svg.appendChild(el('text', { x: P.l - 6, y: yy + 3, 'text-anchor': 'end', 'font-size': 9 }, fmt(yv)));
+  }
+  svg.appendChild(el('line', { class: 'axis-line', x1: P.l, y1: H - P.b, x2: W - P.r, y2: H - P.b }));
+  series.forEach(s => {
+    if (!s.points.length) return;
+    const d = s.points.map((p, i) => `${i ? 'L' : 'M'}${X(p.x).toFixed(1)},${Y(p.y).toFixed(1)}`).join(' ');
+    svg.appendChild(el('path', { d, fill: 'none', stroke: s.color, 'stroke-width': 2, 'stroke-linejoin': 'round' }));
+    s.points.forEach(p => {
+      const dot = el('circle', { class: 'dot-mark', cx: X(p.x), cy: Y(p.y), r: 3.2, fill: s.color });
+      dot.appendChild(el('title', {}, `${s.name} — run ${p.x}: ${fmt(p.y)} ${yLabel || ''}`));
+      svg.appendChild(dot);
+    });
+  });
+  mount.appendChild(svg);
+}
+function barChart(mount, bars) {
+  mount.innerHTML = '';
+  if (!bars.length) { mount.appendChild(placeholder()); return; }
+  const W = 780, rowH = 30, P = { t: 6, r: 50, b: 6, l: 150 };
+  const H = P.t + P.b + bars.length * rowH;
+  const svg = el('svg', { class: 'chart', viewBox: `0 0 ${W} ${H}`, role: 'img' });
+  const maxV = Math.max(...bars.map(b => b.value), 1);
+  bars.forEach((b, i) => {
+    const y = P.t + i * rowH + 4, bh = rowH - 12;
+    const bw = (b.value / maxV) * (W - P.l - P.r);
+    svg.appendChild(el('text', { x: P.l - 8, y: y + bh - 2, 'text-anchor': 'end', 'font-size': 11, fill: 'var(--ink-2)' }, b.name.length > 22 ? b.name.slice(0, 21) + '…' : b.name));
+    const rect = el('rect', { x: P.l, y, width: Math.max(bw, 2), height: bh, rx: 4, fill: b.color });
+    rect.appendChild(el('title', {}, `${b.name}: ${fmt(b.value)} tok/s (n=${b.n})`));
+    svg.appendChild(rect);
+    svg.appendChild(el('text', { x: P.l + Math.max(bw, 2) + 6, y: y + bh - 2, 'font-size': 11, fill: 'var(--ink-2)' }, fmt(b.value)));
+  });
+  mount.appendChild(svg);
+}
+function placeholder() { const d = document.createElement('div'); d.className = 'muted'; d.style.fontSize = '.82rem'; d.style.padding = '1.5rem 0'; d.textContent = 'No runs yet — use Chat, Bench or Tool probe.'; return d; }
+function fmt(v) { return v >= 100 ? Math.round(v).toString() : (Math.round(v * 10) / 10).toString(); }
+
+function renderCharts() {
+  // group runs by candidate index for consistent colour
+  const byCand = new Map();
+  runs.forEach((r, i) => {
+    if (!byCand.has(r.candIdx)) byCand.set(r.candIdx, { name: r.cand, idx: r.candIdx, lat: [], tok: [] });
+    const g = byCand.get(r.candIdx);
+    g.name = r.cand;
+    if (r.ok && r.latencyMs) g.lat.push({ x: g.lat.length + 1, y: r.latencyMs });
+    if (r.ok && r.tokPerSec) g.tok.push({ x: g.tok.length + 1, y: r.tokPerSec });
+  });
+  const groups = [...byCand.values()];
+  const latSeries = groups.map(g => ({ name: g.name, color: candColor(g.idx), points: g.lat }));
+  const tokSeries = groups.map(g => ({ name: g.name, color: candColor(g.idx), points: g.tok }));
+  lineChart($('latChart'), latSeries, { yLabel: 'ms' });
+  lineChart($('tokChart'), tokSeries, { yLabel: 'tok/s' });
+  const bars = groups.filter(g => g.tok.length).map(g => ({ name: g.name, color: candColor(g.idx), n: g.tok.length,
+    value: g.tok.reduce((s, p) => s + p.y, 0) / g.tok.length })).sort((a, b) => b.value - a.value);
+  barChart($('barChart'), bars);
+  // legend
+  $('chartLegend').innerHTML = groups.map(g => `<span class="item"><span class="swatch" style="background:${candColor(g.idx)}"></span>${escapeHtml(g.name)}</span>`).join('');
+  // stat tiles
+  const ok = runs.filter(r => r.ok), speeds = ok.filter(r => r.tokPerSec).map(r => r.tokPerSec);
+  const lats = ok.filter(r => r.latencyMs).map(r => r.latencyMs).sort((a, b) => a - b);
+  const median = lats.length ? lats[Math.floor(lats.length / 2)] : 0;
+  $('statTiles').innerHTML =
+      tile('total runs', runs.length, '')
+    + tile('success', runs.length ? Math.round(ok.length / runs.length * 100) + '%' : '—', '')
+    + tile('best speed', speeds.length ? Math.max(...speeds).toFixed(1) : '—', 'tok/s')
+    + tile('median latency', median ? Math.round(median) : '—', 'ms');
+  // table view
+  const rows = runs.slice(-40).reverse();
+  $('runsTable').innerHTML = '<thead><tr><th>when</th><th>candidate</th><th>kind</th><th>ms</th><th>tok/s</th><th>ok</th></tr></thead><tbody>'
+    + rows.map(r => `<tr><td>${new Date(r.ts).toLocaleTimeString()}</td><td>${escapeHtml(r.cand)}</td><td>${r.kind}</td><td>${r.latencyMs || ''}</td><td>${r.tokPerSec || ''}</td><td>${r.ok ? '✓' : '✕'}</td></tr>`).join('')
+    + '</tbody>';
+}
+$('clearRuns').onclick = () => { if (confirm('Clear all logged runs in this browser?')) { runs = []; saveRuns(); renderCharts(); } };
+$('exportRuns').onclick = () => {
+  const blob = new Blob([JSON.stringify(runs, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = `inky-gym-runs-${new Date().toISOString().slice(0, 10)}.json`; a.click();
+};
+$('importFile').addEventListener('change', async (e) => {
+  const f = e.target.files[0]; if (!f) return;
+  const text = await f.text(); const out = $('importOut'); out.hidden = false;
+  // Try JSON (our own export) first; else just show the transcript so results/*.txt can be eyeballed.
+  try {
+    const arr = JSON.parse(text);
+    if (Array.isArray(arr)) { runs = runs.concat(arr.filter(r => r && r.ts)); saveRuns(); renderCharts(); out.textContent = `Imported ${arr.length} run records.`; return; }
+  } catch {}
+  out.textContent = `${f.name} (${text.length} chars) — plain transcript, shown for reference:\n\n` + text.slice(0, 4000) + (text.length > 4000 ? '\n… (truncated)' : '');
+});
+
+// ================= INIT =================
+applyTheme();
+renderCandidates();
+updateActiveBadge();
+renderTranscript();
+renderCharts();
+</script>
+</body>
+</html>
