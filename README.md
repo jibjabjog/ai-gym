@@ -58,7 +58,11 @@ Scripts skip unreachable candidates with a hint.
 
 `gui/dashboard.html` is a single self-contained page — no server, no build step.
 Open it in a browser and it becomes a SillyTavern-style console for the gym: manage
-a list of **candidates** (`label|backend|host|port|model`), then for any of them:
+a list of **candidates** — local ones as `backend|host|port|model`, or a **remote /
+frontier** one with a **Base URL** (an OpenAI-compatible `…/v1`) + **API key**, so you
+can chat against and compare **Hermes' own frontier model** (its OpenRouter route)
+next to the local ones. A seeded OpenRouter candidate is included — paste your key
+(kept only in the browser, never in the repo) to use it. Then for any candidate:
 
 - **Health** — is the endpoint up, and how fast does it answer?
 - **Chat** — a transcript view with backend / thinking / temperature / max-tokens

@@ -211,16 +211,19 @@
   <!-- CANDIDATES -->
   <section class="card">
     <h2>Candidates</h2>
-    <p class="hint">Endpoints to exercise — the gym's <code>label|backend|host|port|model</code>. Click a row to make it active. Saved in this browser.</p>
+    <p class="hint">Endpoints to exercise. Click a row to make it active. Saved in this browser. Local candidates use <b>host/port</b>; a <b>remote / frontier</b> one (e.g. Hermes' OpenRouter model) sets a <b>Base URL</b> (an OpenAI-compatible <code>…/v1</code>) and an <b>API key</b> — host/port are then ignored.</p>
+    <div style="overflow-x:auto">
     <table class="cand">
-      <thead><tr><th></th><th>Label</th><th>Backend</th><th>Host</th><th>Port</th><th>Model</th><th></th></tr></thead>
+      <thead><tr><th></th><th>Label</th><th>Backend</th><th>Host</th><th>Port</th><th>Model</th><th>Base URL</th><th>API key</th><th></th></tr></thead>
       <tbody id="candRows"></tbody>
     </table>
+    </div>
     <div class="row tight" style="margin-top:.6rem">
       <button id="addCand" class="ghost sm">+ add candidate</button>
       <button id="resetCand" class="ghost sm">reset to defaults</button>
     </div>
     <p class="warn8080" style="margin-top:.5rem">⚠ Port 8080 is Hermes' <b>live fallback</b> (gemma). Health, chat and bench send real load — bench runs one request at a time and never stacks.</p>
+    <p class="hint" style="margin-top:.3rem">🔑 API keys are stored only in <b>this browser</b> (localStorage) and never written to the repo. The seeded <b>OpenRouter</b> candidate needs your own key pasted in before it will answer.</p>
   </section>
 
   <div class="grid two">
@@ -245,8 +248,8 @@
   <section class="card">
     <h2>Chat</h2>
     <p class="hint">Talk to the active candidate. Reasoning is shown when the visible reply is empty (small models can burn the budget thinking).</p>
-    <label class="fld">System prompt (optional)</label>
-    <textarea id="sysPrompt" rows="2" placeholder="e.g. You are Inky, a terse night-shift sysadmin."></textarea>
+    <label class="fld">System prompt (optional — a default is prefilled; small models can drift to another language on a bare "Hi" with no anchor)</label>
+    <textarea id="sysPrompt" rows="2">You are a concise, helpful assistant. Always reply in English.</textarea>
     <div class="row" style="margin-top:.5rem">
       <div style="flex:0 0 auto"><label class="fld">Temp</label><input id="temp" type="number" step="0.1" min="0" max="2" value="0.3" style="width:5rem"></div>
       <div style="flex:0 0 auto"><label class="fld">Max tokens</label><input id="maxTok" type="number" min="1" value="512" style="width:6.5rem"></div>
@@ -333,10 +336,11 @@ const SERIES = ['--s1','--s2','--s3','--s4','--s5','--s6','--s7','--s8'];
 const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
 // ---------- state ----------
+// host/port for local candidates; baseUrl (+apiKey) for a remote OpenAI-compatible one.
 const DEFAULT_CANDIDATES = [
-  { label: 'Inky Qwen3.5-0.8B', backend: 'openai', host: '127.0.0.1', port: '45072', model: 'Inky' },
   { label: 'gemma-4-E2B (LIVE fallback)', backend: 'openai', host: '127.0.0.1', port: '8080', model: 'google/gemma-4-E2B-it-qat-q4_0-gguf:IT' },
-  { label: 'spark-x2.5 1.7B', backend: 'ollama', host: '127.0.0.1', port: '11434', model: 'spark-x2.5' },
+  { label: 'spark-x2.5 (ollama)', backend: 'ollama', host: '127.0.0.1', port: '11434', model: 'spark-x2.5' },
+  { label: 'OpenRouter free (Hermes frontier)', backend: 'openai', host: '', port: '', model: 'stealth/space-bunny-alpha', baseUrl: 'https://openrouter.ai/api/v1', apiKey: '' },
 ];
 let candidates = LS.get('inkygym.candidates', null) || structuredClone(DEFAULT_CANDIDATES);
 let activeIdx = LS.get('inkygym.active', 0);
@@ -359,7 +363,14 @@ const DEFAULT_TOOL = {
 function saveCandidates() { LS.set('inkygym.candidates', candidates); }
 function saveRuns() { LS.set('inkygym.runs', runs.slice(-500)); }
 function activeCand() { return candidates[activeIdx] || candidates[0]; }
-function baseUrl(c) { return `http://${c.host}:${c.port}`; }
+// A candidate is "remote" if it carries an explicit base URL or an API key.
+function isRemote(c) { return !!(((c.baseUrl || '').trim()) || ((c.apiKey || '').trim())); }
+// OpenAI-compatible base, assumed to include /v1 (local default: http://host:port/v1).
+function openaiBase(c) { const b = (c.baseUrl || '').trim(); return b ? b.replace(/\/+$/, '') : `http://${c.host}:${c.port}/v1`; }
+function ollamaBase(c) { const b = (c.baseUrl || '').trim(); return b ? b.replace(/\/+$/, '') : `http://${c.host}:${c.port}`; }
+function originOf(u)  { return u.replace(/\/v1$/, ''); }   // strip trailing /v1 (for llama.cpp /health, /props)
+function authHeaders(c) { const k = (c.apiKey || '').trim(); return k ? { Authorization: `Bearer ${k}` } : {}; }
+function candLoc(c) { return (c.baseUrl || '').trim() || `${c.host}:${c.port}`; }
 function candColor(idx) { return cssVar(SERIES[idx % SERIES.length]); }
 
 // ---------- theme ----------
@@ -390,12 +401,16 @@ async function llmChat(c, messages, { tools = null, think = false, maxTokens, te
   if (c.backend === 'ollama') {
     const body = { model: c.model, messages, think: !!think, stream: false, options: sampling('ollama', { maxTokens, temp }) };
     if (tools) body.tools = tools;
-    res = await fetch(`${baseUrl(c)}/api/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    res = await fetch(`${ollamaBase(c)}/api/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders(c) }, body: JSON.stringify(body) });
     data = await res.json();
   } else {
-    const body = Object.assign({ model: c.model, messages, chat_template_kwargs: { enable_thinking: !!think } }, sampling('openai', { maxTokens, temp }));
+    // llama.cpp honours chat_template_kwargs for the thinking toggle; a remote OpenAI-
+    // compatible endpoint (OpenRouter) does not, so only send it for local candidates.
+    const body = Object.assign({ model: c.model, messages },
+      isRemote(c) ? {} : { chat_template_kwargs: { enable_thinking: !!think } },
+      sampling('openai', { maxTokens, temp }));
     if (tools) body.tools = tools;
-    res = await fetch(`${baseUrl(c)}/v1/chat/completions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    res = await fetch(`${openaiBase(c)}/chat/completions`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders(c) }, body: JSON.stringify(body) });
     data = await res.json();
   }
   const latencyMs = performance.now() - t0;
@@ -429,21 +444,25 @@ async function llmChat(c, messages, { tools = null, think = false, maxTokens, te
 
 async function health(c) {
   const t0 = performance.now();
-  const path = c.backend === 'ollama' ? '/api/tags' : '/health';
-  const res = await fetch(baseUrl(c) + path);
+  let url, opts = {};
+  if (c.backend === 'ollama') url = `${ollamaBase(c)}/api/tags`;
+  else if (isRemote(c)) { url = `${openaiBase(c)}/models`; opts.headers = authHeaders(c); }   // remote: authed models list
+  else url = `${originOf(openaiBase(c))}/health`;                                              // llama.cpp
+  const res = await fetch(url, opts);
   const ms = performance.now() - t0;
-  return { ok: res.ok, status: res.status, ms };
+  return { ok: res.ok, status: res.status, ms, url };
 }
 
 async function explore(c) {
   const out = {};
   try {
     if (c.backend === 'ollama') {
-      out['/api/tags'] = await (await fetch(baseUrl(c) + '/api/tags')).json();
-      out['/api/show'] = await (await fetch(baseUrl(c) + '/api/show', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: c.model }) })).json();
+      out['/api/tags'] = await (await fetch(`${ollamaBase(c)}/api/tags`)).json();
+      out['/api/show'] = await (await fetch(`${ollamaBase(c)}/api/show`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: c.model }) })).json();
     } else {
-      out['/props'] = await (await fetch(baseUrl(c) + '/props')).json();
-      out['/v1/models'] = await (await fetch(baseUrl(c) + '/v1/models')).json();
+      const ob = openaiBase(c), h = authHeaders(c);
+      out['/v1/models'] = await (await fetch(`${ob}/models`, { headers: h })).json();
+      if (!isRemote(c)) { try { out['/props'] = await (await fetch(`${originOf(ob)}/props`)).json(); } catch {} }   // llama.cpp only
     }
   } catch (e) { out.error = String(e); }
   return out;
@@ -469,6 +488,8 @@ function renderCandidates() {
       <td><input data-f="host" value="${escapeAttr(c.host)}" style="width:8rem"></td>
       <td><input data-f="port" value="${escapeAttr(c.port)}" style="width:5rem"></td>
       <td><input data-f="model" value="${escapeAttr(c.model)}"></td>
+      <td><input data-f="baseUrl" value="${escapeAttr(c.baseUrl || '')}" placeholder="blank = host:port" style="width:13rem"></td>
+      <td><input data-f="apiKey" type="password" value="${escapeAttr(c.apiKey || '')}" placeholder="—" autocomplete="off" style="width:7rem"></td>
       <td><button class="ghost sm" data-del="${i}">✕</button></td>`;
     tr.querySelectorAll('[data-f]').forEach(el => {
       el.addEventListener('change', () => { c[el.dataset.f] = el.value; saveCandidates(); renderCandidates(); updateActiveBadge(); });
@@ -485,12 +506,12 @@ function renderCandidates() {
     tb.appendChild(tr);
   });
 }
-$('addCand').onclick = () => { candidates.push({ label: 'new candidate', backend: 'openai', host: '127.0.0.1', port: '8080', model: '' }); saveCandidates(); renderCandidates(); };
+$('addCand').onclick = () => { candidates.push({ label: 'new candidate', backend: 'openai', host: '127.0.0.1', port: '8080', model: '', baseUrl: '', apiKey: '' }); saveCandidates(); renderCandidates(); };
 $('resetCand').onclick = () => { candidates = structuredClone(DEFAULT_CANDIDATES); activeIdx = 0; saveCandidates(); LS.set('inkygym.active', 0); renderCandidates(); updateActiveBadge(); };
 
 function updateActiveBadge() {
   const c = activeCand();
-  $('activeName').innerHTML = `<span class="swatch" style="background:${candColor(activeIdx)}"></span> ${escapeHtml(c.label)} <span class="muted">· ${c.backend} · :${c.port}</span>`;
+  $('activeName').innerHTML = `<span class="swatch" style="background:${candColor(activeIdx)}"></span> ${escapeHtml(c.label)} <span class="muted">· ${c.backend} · ${escapeHtml(candLoc(c))}</span>`;
 }
 function escapeHtml(s) { return String(s).replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m])); }
 function escapeAttr(s) { return String(s).replace(/"/g, '&quot;'); }
@@ -501,7 +522,7 @@ $('healthBtn').onclick = async () => {
   out.innerHTML = `<span class="pill"><span class="dot wait"></span> checking ${escapeHtml(c.label)}…</span>`;
   try {
     const h = await health(c);
-    out.innerHTML = `<span class="pill"><span class="dot ${h.ok ? 'good' : 'bad'}"></span> ${h.ok ? 'UP' : 'HTTP ' + h.status}</span> <span class="muted">${Math.round(h.ms)} ms · ${baseUrl(c)}${c.backend==='ollama'?'/api/tags':'/health'}</span>`;
+    out.innerHTML = `<span class="pill"><span class="dot ${h.ok ? 'good' : 'bad'}"></span> ${h.ok ? 'UP' : 'HTTP ' + h.status}</span> <span class="muted">${Math.round(h.ms)} ms · ${escapeHtml(h.url)}</span>`;
   } catch (e) {
     out.innerHTML = `<span class="pill"><span class="dot bad"></span> unreachable</span> <span class="err">${escapeHtml(String(e))}</span><br><span class="muted">If the server is up, this is usually CORS — see the file header.</span>`;
   }
