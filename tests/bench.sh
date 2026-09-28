@@ -16,7 +16,6 @@ export LLM_TEMPERATURE=0 LLM_MAX_TOKENS="${BENCH_MAX_TOKENS:-150}" LLM_TIMEOUT=6
 PROMPT="Explain in a few sentences how a tokens-per-second benchmark for a language model works."
 
 DEFAULT_CANDIDATES=(
-    "Inky (Qwen3.5-0.8B)|openai|127.0.0.1|45072|Inky"
     "spark-x2.5 (1.7B)|ollama|127.0.0.1|11434|spark-x2.5"
     "gemma-4-E2B|openai|127.0.0.1|8080|google/gemma-4-E2B-it-qat-q4_0-gguf:IT"
 )

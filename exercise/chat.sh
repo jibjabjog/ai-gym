@@ -6,9 +6,9 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/../lib/backend.sh"
 
-BASE_URL="http://${INKY_HOST:-127.0.0.1}:${INKY_PORT:-45072}"
+BASE_URL="http://${INKY_HOST:-127.0.0.1}:${INKY_PORT:-8080}"
 BACKEND="${INKY_BACKEND:-openai}"
-MODEL_NAME="${INKY_MODEL_NAME:-Inky}"
+MODEL_NAME="${INKY_MODEL_NAME:-inky}"
 # Thinking off by default: small reasoning models can spend the whole token
 # budget on <think> output and never answer. INKY_THINKING=1 to watch it.
 export LLM_MAX_TOKENS="${INKY_MAX_TOKENS:-512}" LLM_THINKING="${INKY_THINKING:-0}"

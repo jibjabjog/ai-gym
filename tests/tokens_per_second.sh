@@ -6,7 +6,7 @@
 set -uo pipefail
 
 INKY_HOST="${INKY_HOST:-127.0.0.1}"
-INKY_PORT="${INKY_PORT:-45072}"
+INKY_PORT="${INKY_PORT:-8080}"
 BASE_URL="http://${INKY_HOST}:${INKY_PORT}"
 
 PROMPT="${1:-Write a short paragraph about gyms for AI agents.}"

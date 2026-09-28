@@ -120,9 +120,9 @@ CANDIDATES="Spark 4B|ollama|127.0.0.1|11434|SparkLLM/Spark-X2.5-4B" exercise/int
 
 | Env var | Default | Used by |
 |---|---|---|
-| `INKY_HOST` / `INKY_PORT` | `127.0.0.1` / `45072`¹ | chat, explore (health_check defaults to the router on `:8080`) |
+| `INKY_HOST` / `INKY_PORT` | `127.0.0.1` / `8080`¹ | chat, explore, tokens_per_second, health_check (the router = live "inky" = gemma-4-E2B) |
 | `INKY_BACKEND` | `openai` (llama.cpp) — or `ollama` | chat |
-| `INKY_MODEL_NAME` | `Inky` | chat |
+| `INKY_MODEL_NAME` | `inky` | chat |
 | `INKY_MAX_TOKENS` | 512 chat · 200–300 evals | all |
 | `INKY_THINKING` | `0` — `1` shows reasoning | chat |
 | `INKY_TEMPERATURE` | 0.3 evals | interview, agent_loop, heartbeat |
@@ -132,6 +132,7 @@ CANDIDATES="Spark 4B|ollama|127.0.0.1|11434|SparkLLM/Spark-X2.5-4B" exercise/int
 | `BENCH_RUNS` / `BENCH_MAX_TOKENS` | 3 / 150 | bench |
 | `INKY_UNIT` | `llama-router.service` | health_check (the live "inky" = gemma-4-E2B on `:8080`) |
 
-¹ `:45072` (the old Qwen3.5-0.8B "Inky") was **retired 2026-09-24**. `health_check.sh`
-now targets the router on `:8080`; point chat/explore at a live candidate
+¹ `:45072` (the old Qwen3.5-0.8B "Inky") was **retired 2026-09-24**. All `INKY_*`
+defaults now point at the router on `:8080` (model alias `inky` = gemma-4-E2B).
+For another candidate override the env vars
 (e.g. `INKY_BACKEND=ollama INKY_PORT=11434 INKY_MODEL_NAME=spark-x2.5`) or use the GUI.
