@@ -23,6 +23,7 @@ spark-x2.5 1.7B / 4B (ollama, port 11434) · gemma-4-E2B (`llama-router`, port 8
 - [8. Agent loop v1](#8-agent-loop-v1-0917)
 - [9. Heartbeat / propose-only v1](#9-heartbeat--propose-only-v1-0917)
 - [10. Review and v2 re-run](#10-review-and-v2-re-run-0918)
+- [11. Does the Hermes → gemma failover actually work?](#11-does-the-hermes--gemma-failover-actually-work-0919--0923)
 - [Harness bugs found](#harness-bugs-found)
 - [Methodology lessons](#methodology-lessons)
 - [Open gaps](#open-gaps)
