@@ -51,9 +51,10 @@ building or operating a *character*, it belongs in the-orb, not here.
 ```
 lib/backend.sh           llm_chat / llm_message / llm_tool_calls / candidate plumbing — both API shapes
 lib/scenario_port8080.sh the simulated incident, its scorer, and the shared tool-loop runner
-tests/                   health_check.sh, tokens_per_second.sh (Inky only), bench.sh (any candidate), hermes_failover.sh (real Hermes -> gemma)
+tests/                   health_check.sh, tokens_per_second.sh (Inky only), bench.sh (any candidate), hermes_failover.sh (real Hermes -> gemma), discover.sh (read-only roll-call: local + freerouter's frontier pick)
 exercise/                chat, explore, interview, agent_loop, heartbeat
-gui/dashboard.html       single-file browser console: connect, chat, health, explore, bench, tool-probe, response-time/tok-s graphs
+gui/dashboard.html       single-file browser console: connect, chat, health, explore, discover, bench, tool-probe, response-time/tok-s graphs
+gui/serve.sh             serve the repo on 127.0.0.1:8000 so the GUI's ollama candidates work (ollama refuses a file:// origin)
 results/                 raw transcripts from dated runs — cite these from FINDINGS.md
 ```
 

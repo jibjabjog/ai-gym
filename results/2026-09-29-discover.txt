@@ -1,0 +1,33 @@
+====================================================================
+ Inky's Gym — AI discovery report
+ 2026-09-29T20:57:37+00:00   host 127.0.0.1
+====================================================================
+
+== llama-router  http://127.0.0.1:8080  (Hermes' live fallback) ==
+status:       UP
+busy slots:   0  (a busy model is still healthy — don't restart)
+models:
+  - google/gemma-4-E2B-it-qat-q4_0-gguf:IT  ctx=?
+  - google/gemma-4-E4B-it-qat-q4_0-gguf:IT  ctx=?
+  - inky  ctx=131072
+
+== ollama  http://127.0.0.1:11434 ==
+status:       UP
+installed:
+  - SparkLLM/Spark-X2.5-4B:latest  8GB  4.1B
+  - spark-x2.5:latest  1GB  1.7B
+loaded now:   none (loads on demand, unloads when idle)
+
+== Hermes frontier  (freerouter's OpenRouter selection) ==
+note:         reported read-only; live probe = the GUI's Discover button (holds the key)
+selection:    /home/huey/.hermes/.model_selection.json
+updated:      2026-09-29T06:00:41.267567   dry_run=false
+primary pick:
+  -> stealth/space-bunny-alpha  ctx=1000000  score=91  healthy=true
+     thinkingmachines/inkling:free  ctx=1048576  score=92  healthy=null
+     thinkingmachines/inkling-small:free  ctx=1048576  score=91  healthy=null
+     stealth/space-bunny-alpha  ctx=1000000  score=91  healthy=true
+     nvidia/nemotron-3.5-lightning:free  ctx=1000000  score=77  healthy=null
+     nvidia/nemotron-3-ultra-550b-a55b:free  ctx=1000000  score=77  healthy=null
+
+-- end report --

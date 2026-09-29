@@ -43,16 +43,35 @@ Raw output in [`results/`](results/). `—` = not tested.
 
 ## Quick start
 
+**New here? Start with these three, in order, from the repo root.**
+
+Prerequisites: `bash`, `curl`, `jq` (`sudo apt install jq` if missing). No build
+step, no install, no test runner — every script is plain bash. There's nothing to
+start on this box: the models already run as services (see the table below), so the
+scripts just *talk* to them. Run each from the repo root; they figure out their own
+paths.
+
 ```bash
-tests/health_check.sh            # is Inky up?
-exercise/chat.sh "hello"         # talk to it
-tests/bench.sh                   # speed, all reachable candidates
-open gui/dashboard.html          # the workout GUI (see below)
+tests/discover.sh                # 1. what's alive? one read-only roll-call of every AI
+tests/health_check.sh            # 2. is Inky (the live fallback) healthy?
+exercise/chat.sh "hello"         # 3. say hello to it
 ```
 
-gemma lives behind `llama-router.service`, which is now **Hermes' live
-fallback** (since 2026-09-18) — it stays running; don't stop it after tests.
-Scripts skip unreachable candidates with a hint.
+`discover.sh` prints an UP/DOWN line per endpoint and never sends load — the safest
+first thing to run. Once something shows UP, chat to it or benchmark it:
+
+```bash
+tests/bench.sh                   # speed across all reachable candidates
+gui/serve.sh                     # then open http://127.0.0.1:8000/gui/dashboard.html
+```
+
+Prefer a browser? Skip straight to `gui/serve.sh` — the GUI wraps every script above
+(Discover, Health, Chat, Bench) with buttons. (`open gui/dashboard.html` works too, but
+only for the llama.cpp candidates; the ollama ones need `serve.sh` — see the GUI section.)
+
+gemma lives behind `llama-router.service`, which is **Hermes' live fallback**
+(since 2026-09-18) — it stays running; don't stop it after tests. Scripts skip
+unreachable candidates with a hint, so nothing here breaks a running service.
 
 ## The workout GUI
 
@@ -64,6 +83,9 @@ can chat against and compare **Hermes' own frontier model** (its OpenRouter rout
 next to the local ones. A seeded OpenRouter candidate is included — paste your key
 (kept only in the browser, never in the repo) to use it. Then for any candidate:
 
+- **Discover** — one read-only pass over *all* candidates at once: up/down, latency,
+  and the models each reports (incl. a live frontier/OpenRouter probe using the pasted
+  key). Sends no completions. Terminal twin: `tests/discover.sh`.
 - **Health** — is the endpoint up, and how fast does it answer?
 - **Chat** — a transcript view with backend / thinking / temperature / max-tokens
   toggles (shows the model's reasoning when the visible reply is empty).
@@ -78,9 +100,9 @@ same two shapes `lib/backend.sh` uses. **Opening it — mind CORS (tested 2026-0
 llama.cpp (`:8080`) returns `Access-Control-Allow-Origin: null`, so it works straight
 from `file://`. **ollama (`:11434`) refuses a `file://` (null) origin with 403**, but
 allows any `http://localhost` origin — so if you want the ollama candidates, serve the
-page from localhost (`python3 -m http.server` in the repo root, then browse
-`http://localhost:8000/gui/dashboard.html`; tunnel the port if the box is remote). No
-`OLLAMA_ORIGINS`/service change needed. **Other constraints, on purpose:** the page
+page from localhost with **`gui/serve.sh`** (binds `127.0.0.1:8000`, prints the URL and
+the tunnel command; `GUI_PORT=` to change the port), then browse
+`http://localhost:8000/gui/dashboard.html`. No `OLLAMA_ORIGINS`/service change needed. **Other constraints, on purpose:** the page
 can't auto-read the `results/` folder, so run history is kept in the browser
 (localStorage) and old transcripts are brought in with a file picker. The heavy
 *scored* role tests (interview, agent-loop, heartbeat — their scorers live in bash)
@@ -98,6 +120,8 @@ warm with Hermes' real Telegram prompt: a failover turn costs **~1–2 s warm, ~
 | Script | What it tests |
 |---|---|
 | `tests/health_check.sh` | Inky's systemd unit, `/health`, `/v1/models` |
+| `tests/discover.sh` | **read-only** roll-call of every AI: llama-router (:8080), ollama (:11434), and Hermes' current frontier pick (freerouter's OpenRouter selection). Sends no completions (keeps gemma's warm cache); writes `results/<date>-discover.txt`. Live frontier probe = the GUI (holds the key) |
+| `gui/serve.sh` | serve the repo over `http://127.0.0.1:8000` so the GUI's ollama candidates work (ollama refuses a `file://` origin); tunnel the port to reach it remotely |
 | `tests/tokens_per_second.sh` | quick single-shot tok/s for Inky |
 | `tests/bench.sh` | controlled speed benchmark across candidates (warmup + N identical runs) |
 | `tests/hermes_failover.sh` | **real Hermes**: forces one throwaway session (bogus primary model) to fail over to gemma. `QUICK` (default, ~5 s) passes once Hermes' own socket reaches the fallback; `FULL=1` waits for the reply. Refuses to run while gemma is busy; live gateway untouched |

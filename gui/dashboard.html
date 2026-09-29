@@ -244,6 +244,14 @@
     </section>
   </div>
 
+  <!-- DISCOVER -->
+  <section class="card">
+    <h2>Discover</h2>
+    <p class="hint">Probe <b>every</b> candidate at once — up/down, latency, and the models each endpoint reports. Read-only: no completions are sent, so the gemma (<code>:8080</code>) warm cache is safe. The frontier / OpenRouter candidate is probed live using its pasted key (a bare models list, no generation). Terminal twin: <code>tests/discover.sh</code>.</p>
+    <button id="discoverBtn">Discover all candidates</button>
+    <div id="discoverOut" style="margin-top:.6rem"></div>
+  </section>
+
   <!-- CHAT -->
   <section class="card">
     <h2>Chat</h2>
@@ -534,6 +542,53 @@ $('exploreBtn').onclick = async () => {
   out.hidden = false; out.textContent = 'exploring…';
   const data = await explore(c);
   out.textContent = JSON.stringify(data, null, 2);
+};
+
+// ================= DISCOVER =================
+// One read-only pass over every candidate: health + a models list. No
+// completions — keeps the gemma warm cache intact (see the panel hint).
+function summariseModels(c, ex) {
+  try {
+    if (c.backend === 'ollama') {
+      const m = (ex['/api/tags'] && ex['/api/tags'].models) || [];
+      return m.length ? `${m.length} installed: ${m.map(x => x.name).join(', ')}` : 'no models';
+    }
+    const data = (ex['/v1/models'] && ex['/v1/models'].data) || [];
+    const ids = data.map(x => x.id);
+    let ctx = '';
+    if (ex['/props']) ctx = ` · ctx ${ex['/props'].default_generation_settings.n_ctx}`;   // llama.cpp
+    const has = c.model && ids.length ? (ids.includes(c.model) ? '' : ` · ⚠ "${c.model}" not in list`) : '';
+    return `${ids.length} model(s)${ctx}${has}`;
+  } catch { return '—'; }
+}
+
+$('discoverBtn').onclick = async () => {
+  const out = $('discoverOut');
+  out.innerHTML = `<span class="pill"><span class="dot wait"></span> probing ${candidates.length} candidate(s)…</span>`;
+  const rows = await Promise.all(candidates.map(async (c, i) => {
+    const r = { i, label: c.label, loc: candLoc(c), remote: isRemote(c) };
+    try {
+      const h = await health(c);
+      r.ok = h.ok; r.status = h.status; r.ms = Math.round(h.ms);
+      r.models = h.ok ? summariseModels(c, await explore(c)) : `HTTP ${h.status}`;
+    } catch (e) {
+      r.ok = false; r.err = String(e).replace(/^Error:\s*/, '');
+      r.models = r.remote && /401|403/.test(r.err) ? 'auth failed — paste the API key' : 'unreachable (CORS? server down?)';
+    }
+    return r;
+  }));
+  const cell = r => `
+    <tr>
+      <td><span class="swatch" style="background:${candColor(r.i)}"></span></td>
+      <td>${escapeHtml(r.label)}${r.remote ? ' <span class="muted">· frontier</span>' : ''}</td>
+      <td><span class="pill"><span class="dot ${r.ok ? 'good' : 'bad'}"></span> ${r.ok ? 'UP' : (r.status ? 'HTTP ' + r.status : 'down')}</span></td>
+      <td class="muted">${r.ms != null ? r.ms + ' ms' : '—'}</td>
+      <td class="muted">${escapeHtml(r.loc)}</td>
+      <td class="${r.ok ? 'muted' : 'err'}">${escapeHtml(r.models)}</td>
+    </tr>`;
+  out.innerHTML = `<div style="overflow-x:auto"><table class="runs">
+    <thead><tr><th></th><th>Candidate</th><th>Status</th><th>Latency</th><th>Location</th><th>Models</th></tr></thead>
+    <tbody>${rows.map(cell).join('')}</tbody></table></div>`;
 };
 
 // ================= CHAT =================
